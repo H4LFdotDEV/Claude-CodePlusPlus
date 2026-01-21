@@ -25,6 +25,7 @@ from .validation import (
     validate_tags, validate_project, validate_content, validate_limit,
     ALLOWED_DOC_TYPES, MAX_CONTENT_SIZE
 )
+from .tool_schemas import get_tool_schemas
 
 # Configure logging
 LOG_LEVEL = os.environ.get("MEMORY_MCP_LOG_LEVEL", "INFO").upper()
@@ -171,135 +172,7 @@ class MemoryMCPServer:
 
     def handle_list_tools(self) -> Dict:
         """List available MCP tools."""
-        tools = [
-            {
-                "name": "memory_store",
-                "description": "Store content in long-term memory",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "content": {"type": "string", "description": "Content to store"},
-                        "type": {"type": "string", "enum": ["code", "note", "conversation", "reference"]},
-                        "source": {"type": "string", "description": "Source identifier (file path, URL, etc)"},
-                        "tags": {"type": "array", "items": {"type": "string"}},
-                        "project": {"type": "string", "description": "Project name"}
-                    },
-                    "required": ["content", "type", "source"]
-                }
-            },
-            {
-                "name": "memory_search",
-                "description": "Search memory using text or semantic similarity",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "query": {"type": "string", "description": "Search query"},
-                        "type": {"type": "string", "enum": ["text", "semantic", "hybrid"]},
-                        "limit": {"type": "integer", "default": 10},
-                        "filters": {
-                            "type": "object",
-                            "properties": {
-                                "doc_type": {"type": "string"},
-                                "project": {"type": "string"},
-                                "tags": {"type": "array", "items": {"type": "string"}}
-                            }
-                        }
-                    },
-                    "required": ["query"]
-                }
-            },
-            {
-                "name": "memory_recall",
-                "description": "Recall a specific memory by ID",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "id": {"type": "string", "description": "Document ID"}
-                    },
-                    "required": ["id"]
-                }
-            },
-            {
-                "name": "memory_delete",
-                "description": "Delete a memory",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "id": {"type": "string", "description": "Document ID to delete"}
-                    },
-                    "required": ["id"]
-                }
-            },
-            {
-                "name": "memory_list",
-                "description": "List recent memories",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "limit": {"type": "integer", "default": 20},
-                        "type": {"type": "string"},
-                        "project": {"type": "string"}
-                    }
-                }
-            },
-            {
-                "name": "session_save",
-                "description": "Save current session state",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "project_path": {"type": "string"},
-                        "active_files": {"type": "array", "items": {"type": "string"}},
-                        "context": {"type": "object"}
-                    },
-                    "required": ["project_path"]
-                }
-            },
-            {
-                "name": "session_restore",
-                "description": "Restore a previous session",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "session_id": {"type": "string"}
-                    }
-                }
-            },
-            {
-                "name": "vault_write",
-                "description": "Write a note to the Obsidian vault",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "path": {"type": "string", "description": "Note path (without .md)"},
-                        "content": {"type": "string"},
-                        "folder": {"type": "string", "enum": ["code", "notes", "conversations", "references", "daily"]},
-                        "tags": {"type": "array", "items": {"type": "string"}}
-                    },
-                    "required": ["path", "content"]
-                }
-            },
-            {
-                "name": "vault_read",
-                "description": "Read a note from the vault",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "path": {"type": "string", "description": "Note path"}
-                    },
-                    "required": ["path"]
-                }
-            },
-            {
-                "name": "memory_stats",
-                "description": "Get memory system statistics",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {}
-                }
-            }
-        ]
-
+        tools = get_tool_schemas()
         return {"tools": tools}
 
     def handle_call_tool(self, name: str, arguments: Dict) -> Dict:
