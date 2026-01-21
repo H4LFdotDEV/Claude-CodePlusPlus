@@ -8,7 +8,6 @@ import asyncio
 import json
 import logging
 import os
-import re
 import sys
 import uuid
 from typing import Optional, List, Dict, Any
@@ -21,6 +20,11 @@ from .vault_manager import VaultManager
 from .redis_client import RedisClient, SessionState, REDIS_AVAILABLE
 from .faiss_manager import FAISSManager, FAISS_AVAILABLE
 from .embedding_provider import get_embedding_provider, FallbackEmbeddingProvider
+from .validation import (
+    validate_string, validate_int, validate_list, validate_doc_type,
+    validate_tags, validate_project, validate_content, validate_limit,
+    ALLOWED_DOC_TYPES, MAX_CONTENT_SIZE
+)
 
 # Configure logging
 LOG_LEVEL = os.environ.get("MEMORY_MCP_LOG_LEVEL", "INFO").upper()
@@ -46,116 +50,6 @@ else:
         '%(asctime)s - %(levelname)s - %(message)s'
     ))
     logger.addHandler(console_handler)
-
-
-# Allowed document types
-ALLOWED_DOC_TYPES = frozenset(["code", "note", "reference", "conversation"])
-
-# Max content size: 1MB
-MAX_CONTENT_SIZE = 1048576
-
-# Tag validation pattern: alphanumeric and hyphen only
-TAG_PATTERN = re.compile(r'^[a-zA-Z0-9-]+$')
-
-# Project name validation pattern: alphanumeric, hyphen, and underscore only
-PROJECT_PATTERN = re.compile(r'^[a-zA-Z0-9_-]+$')
-
-
-def validate_string(value: Any, name: str, min_len: int = 0, max_len: int = 100000) -> str:
-    """Validate and return a string value."""
-    if value is None:
-        raise ValueError(f"{name} is required")
-    if not isinstance(value, str):
-        raise TypeError(f"{name} must be a string, got {type(value).__name__}")
-    if len(value) < min_len:
-        raise ValueError(f"{name} must be at least {min_len} characters")
-    if len(value) > max_len:
-        raise ValueError(f"{name} must be at most {max_len} characters")
-    return value
-
-
-def validate_int(value: Any, name: str, min_val: int = None, max_val: int = None) -> int:
-    """Validate and return an integer value."""
-    if value is None:
-        raise ValueError(f"{name} is required")
-    if not isinstance(value, (int, float)):
-        raise TypeError(f"{name} must be a number, got {type(value).__name__}")
-    result = int(value)
-    if min_val is not None and result < min_val:
-        raise ValueError(f"{name} must be at least {min_val}")
-    if max_val is not None and result > max_val:
-        raise ValueError(f"{name} must be at most {max_val}")
-    return result
-
-
-def validate_list(value: Any, name: str, item_type: type = str) -> List:
-    """Validate and return a list value."""
-    if value is None:
-        return []
-    if not isinstance(value, list):
-        raise TypeError(f"{name} must be a list, got {type(value).__name__}")
-    for i, item in enumerate(value):
-        if not isinstance(item, item_type):
-            raise TypeError(f"{name}[{i}] must be {item_type.__name__}")
-    return value
-
-
-def validate_doc_type(value: Any, name: str = "type") -> str:
-    """Validate document type against allowed values."""
-    value = validate_string(value, name)
-    if value not in ALLOWED_DOC_TYPES:
-        raise ValueError(
-            f"Invalid {name}: '{value}'. Must be one of: {', '.join(sorted(ALLOWED_DOC_TYPES))}"
-        )
-    return value
-
-
-def validate_tags(value: Any, name: str = "tags") -> List[str]:
-    """Validate and sanitize tags array (alphanumeric + hyphen only)."""
-    tags = validate_list(value, name, str)
-    sanitized = []
-    for i, tag in enumerate(tags):
-        if not tag:
-            continue
-        if not TAG_PATTERN.match(tag):
-            raise ValueError(
-                f"{name}[{i}] '{tag}' contains invalid characters. "
-                "Tags must be alphanumeric with hyphens only."
-            )
-        sanitized.append(tag)
-    return sanitized
-
-
-def validate_project(value: Any, name: str = "project") -> Optional[str]:
-    """Validate project name (no special characters except hyphen/underscore)."""
-    if value is None:
-        return None
-    project = validate_string(value, name, max_len=100)
-    if not PROJECT_PATTERN.match(project):
-        raise ValueError(
-            f"Invalid {name}: '{project}'. "
-            "Project names must be alphanumeric with hyphens and underscores only."
-        )
-    return project
-
-
-def validate_content(value: Any, name: str = "content") -> str:
-    """Validate content with size limit (max 1MB)."""
-    content = validate_string(value, name, min_len=1)
-    content_bytes = len(content.encode('utf-8'))
-    if content_bytes > MAX_CONTENT_SIZE:
-        raise ValueError(
-            f"{name} exceeds maximum size of {MAX_CONTENT_SIZE} bytes "
-            f"(got {content_bytes} bytes)"
-        )
-    return content
-
-
-def validate_limit(value: Any, name: str = "limit", default: int = 10) -> int:
-    """Validate limit parameter (1-1000 range)."""
-    if value is None:
-        return default
-    return validate_int(value, name, min_val=1, max_val=1000)
 
 
 class MemoryMCPServer:
