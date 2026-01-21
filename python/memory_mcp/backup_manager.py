@@ -134,16 +134,15 @@ class LocalBackupStrategy(BackupStrategy):
             # Update size
             metadata.size_bytes = self._get_dir_size(backup_dir)
 
-            # Optionally compress
-            if self.config.compress:
-                self._compress_backup(backup_dir, metadata)
-
-            # Write manifest
+            # Write manifest (before compression, so it's included in tar)
+            metadata.status = "success"
             manifest_path = os.path.join(backup_dir, "manifest.json")
             with open(manifest_path, "w") as f:
                 f.write(metadata.to_json())
 
-            metadata.status = "success"
+            # Optionally compress
+            if self.config.compress:
+                self._compress_backup(backup_dir, metadata)
             self._enforce_retention_policy()
             logger.info(f"Backup {metadata.backup_id} completed successfully")
             return True
