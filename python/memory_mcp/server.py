@@ -261,8 +261,10 @@ class MemoryMCPServer:
 
     def handle_initialize(self, params: Dict) -> Dict:
         """Handle MCP initialize request."""
+        # Echo back the client's protocol version for compatibility
+        client_version = params.get("protocolVersion", "2024-11-05")
         return {
-            "protocolVersion": "2024-11-05",
+            "protocolVersion": client_version,
             "serverInfo": {
                 "name": "claude-code-pp-memory",
                 "version": "1.0.0"
@@ -863,14 +865,16 @@ class MemoryMCPServer:
 
     async def run_stdio(self):
         """Run MCP server over stdio."""
+        loop = asyncio.get_running_loop()
+
         reader = asyncio.StreamReader()
         protocol = asyncio.StreamReaderProtocol(reader)
-        await asyncio.get_event_loop().connect_read_pipe(lambda: protocol, sys.stdin)
+        await loop.connect_read_pipe(lambda: protocol, sys.stdin)
 
-        writer_transport, writer_protocol = await asyncio.get_event_loop().connect_write_pipe(
+        writer_transport, writer_protocol = await loop.connect_write_pipe(
             asyncio.streams.FlowControlMixin, sys.stdout
         )
-        writer = asyncio.StreamWriter(writer_transport, writer_protocol, reader, asyncio.get_event_loop())
+        writer = asyncio.StreamWriter(writer_transport, writer_protocol, reader, loop)
 
         while True:
             try:
@@ -879,17 +883,50 @@ class MemoryMCPServer:
                     break
 
                 request = json.loads(line.decode())
+                logger.info(f"REQUEST: {json.dumps(request)}")
+
+                # Notifications don't have an "id" and don't get responses
+                if "id" not in request:
+                    # Handle notification silently (no response)
+                    logger.info(f"NOTIFICATION (no response): {request.get('method')}")
+                    self._handle_notification(request)
+                    continue
+
                 response = self._handle_request(request)
                 response_line = json.dumps(response) + "\n"
+                logger.info(f"RESPONSE: {response_line[:500]}")
                 writer.write(response_line.encode())
                 await writer.drain()
 
             except json.JSONDecodeError:
                 continue
+            except ConnectionResetError:
+                # Connection closed by client - normal shutdown
+                logger.info("Connection closed by client")
+                break
+            except BrokenPipeError:
+                # Pipe closed - normal shutdown
+                logger.info("Pipe closed")
+                break
             except Exception as e:
-                error_response = self._create_error(-32603, str(e), 0)
-                writer.write((json.dumps(error_response) + "\n").encode())
-                await writer.drain()
+                logger.error(f"Error handling request: {e}")
+                try:
+                    error_response = self._create_error(-32603, str(e), 0)
+                    writer.write((json.dumps(error_response) + "\n").encode())
+                    await writer.drain()
+                except (ConnectionResetError, BrokenPipeError):
+                    # Connection already closed, can't send error
+                    break
+
+    def _handle_notification(self, request: Dict) -> None:
+        """Handle incoming MCP notification (no response needed)."""
+        method = request.get("method", "")
+        # Notifications are fire-and-forget, just log them
+        if method == "notifications/initialized":
+            pass  # Client is ready, nothing to do
+        elif method == "notifications/cancelled":
+            pass  # Request was cancelled
+        # Add other notification handlers as needed
 
     def _handle_request(self, request: Dict) -> Dict:
         """Handle incoming MCP request."""
@@ -905,8 +942,12 @@ class MemoryMCPServer:
             name = params.get("name", "")
             arguments = params.get("arguments", {})
             return self._create_response(self.handle_call_tool(name, arguments), request_id)
-        elif method == "notifications/initialized":
-            return self._create_response({}, request_id)
+        elif method == "resources/list":
+            # Return empty resources list
+            return self._create_response({"resources": []}, request_id)
+        elif method == "resources/read":
+            # No resources to read
+            return self._create_error(-32602, "Resource not found", request_id)
         else:
             return self._create_error(-32601, f"Unknown method: {method}", request_id)
 
