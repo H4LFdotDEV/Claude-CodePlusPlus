@@ -28,12 +28,12 @@ jobs:
         run: |
           cd python
           pip install mypy
-          mypy memory_mcp --ignore-missing-imports || true
+          mypy memory_mcp --ignore-missing-imports
       - name: Run tests
         run: |
           cd python
           pip install pytest pytest-cov
-          pytest tests/ -v --cov=memory_mcp --cov-report=xml
+          pytest tests/ -v --cov=memory_mcp --cov-report=xml --cov-fail-under=80
       - name: Upload coverage
         uses: codecov/codecov-action@v4
         with:
@@ -51,12 +51,12 @@ jobs:
       - name: Run Swift tests
         run: |
           cd swift-system-controller
-          swift test || true
+          swift test
       - name: Lint with SwiftLint
         run: |
           brew install swiftlint
           cd swift-system-controller
-          swiftlint --strict || true
+          swiftlint --strict
 
   docker-build:
     runs-on: ubuntu-latest

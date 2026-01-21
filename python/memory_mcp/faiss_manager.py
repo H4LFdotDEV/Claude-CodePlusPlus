@@ -235,7 +235,7 @@ class FAISSManager:
     def maybe_rebuild(self) -> None:
         """Rebuild index if needed, with progress logging."""
         if self.needs_rebuild():
-            print(f"Rebuilding FAISS index: {self.deleted_count}/{self.total_added} deleted")
+            logger.info(f"Rebuilding FAISS index: {self.deleted_count}/{self.total_added} deleted")
 
     def rebuild(self, embeddings_loader):
         """

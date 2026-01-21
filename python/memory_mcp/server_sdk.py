@@ -270,7 +270,9 @@ Content:
         if session_id:
             state = redis.get_session(session_id)
         else:
-            state = redis.get_latest_session()
+            # Note: Latest session retrieval not yet implemented
+            # For now, return empty state if no session_id provided
+            state = None
         if not state:
             return [TextContent(type="text", text="No session found")]
         text = f"""Restored session {state.session_id}:

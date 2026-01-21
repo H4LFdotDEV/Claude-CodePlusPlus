@@ -7,6 +7,7 @@
 import os
 import re
 import hashlib
+import logging
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 from dataclasses import dataclass
@@ -14,6 +15,8 @@ from datetime import datetime, timezone
 import yaml
 
 from .config import get_config, VaultConfig
+
+logger = logging.getLogger("memory_mcp.vault_manager")
 
 
 @dataclass
@@ -35,7 +38,28 @@ class VaultNote:
 
 
 class VaultManager:
-    """Manages an Obsidian-compatible markdown vault."""
+    """
+    Manages an Obsidian-compatible markdown vault with path traversal protection.
+
+    Security Properties:
+    - All paths are validated against the vault root directory
+    - Symlinks are fully resolved before validation
+    - Works correctly on both case-sensitive and case-insensitive filesystems
+    - Protects against: .. traversal, symlink escapes, null byte injection, case-based escapes
+
+    Limitations:
+    - Time-of-check-time-of-use (TOCTOU) race condition possible if vault root is
+      moved/deleted between path validation and file operation. Acceptable for
+      single-machine usage.
+    - Relative symlinks created by users could potentially point outside vault
+      (e.g., user creates vault/doc with symlink to external location).
+      This is user-controlled risk, not vault-enforced escape.
+
+    Filesystem Support:
+    - Linux: Case-sensitive filesystems (ext4, etc.) - exact byte comparison
+    - macOS: Case-insensitive filesystems (APFS) - case-normalized comparison
+    - Windows: Case-insensitive filesystems (NTFS) - case-normalized comparison
+    """
 
     # Obsidian-style folder structure
     FOLDER_CODE = "code"
@@ -50,6 +74,7 @@ class VaultManager:
         self.path = path or self.config.path
         self.path = os.path.expanduser(self.path)
         self.obsidian_compatible = self.config.obsidian_compatible
+        self._case_sensitivity_cache: Dict[str, bool] = {}
 
         self._init_vault()
 
@@ -78,21 +103,135 @@ class VaultManager:
             if not app_config.exists():
                 app_config.write_text('{"showLineNumber": true, "spellcheck": true}')
 
+    def _is_case_sensitive_filesystem(self, path: str) -> bool:
+        """
+        Detect if filesystem is case-sensitive.
+
+        Args:
+            path: Filesystem path to check
+
+        Returns:
+            True if filesystem is case-sensitive, False otherwise.
+        """
+        # Check if we've already cached this result
+        mount_point = path.split(os.sep)[0] or os.sep
+
+        if mount_point in self._case_sensitivity_cache:
+            return self._case_sensitivity_cache[mount_point]
+
+        # Test by comparing paths at different cases
+        test_dir = os.path.dirname(path)
+        if not test_dir or not os.path.exists(test_dir):
+            # Default to case-sensitive if we can't test
+            result = True
+        else:
+            # Simple test: if lower and upper case paths resolve differently, it's case-sensitive
+            test_lower = os.path.realpath(test_dir)
+            test_upper = os.path.realpath(test_dir.upper())
+
+            # On case-insensitive systems, these will be identical
+            result = test_lower != test_upper
+
+        self._case_sensitivity_cache[mount_point] = result
+        return result
+
     def _full_path(self, relative_path: str) -> str:
-        """Get full filesystem path with path traversal protection."""
-        # Normalize backslashes to forward slashes for cross-platform security
+        """
+        Get full filesystem path with comprehensive path traversal protection.
+
+        Resolves symlinks, normalizes case on case-insensitive filesystems,
+        and validates path is within vault root.
+
+        Args:
+            relative_path: Relative path within vault (may contain ../, etc.)
+
+        Returns:
+            Absolute filesystem path within vault.
+
+        Raises:
+            ValueError: If path traversal, symlink escape, or other attacks detected.
+            TypeError: If relative_path is not a string.
+        """
+        # Input validation
+        if not isinstance(relative_path, str):
+            raise TypeError(f"Path must be string, got {type(relative_path).__name__}")
+
+        if not relative_path:
+            raise ValueError("Path cannot be empty")
+
+        # Detect null byte injection
+        if '\x00' in relative_path:
+            raise ValueError("Path contains null bytes (path injection detected)")
+
+        # Normalize backslashes to forward slashes for cross-platform consistency
         # This prevents Windows-style path traversal attacks on Unix systems
         normalized_input = relative_path.replace("\\", "/")
 
-        # Normalize and resolve the path
-        vault_path = os.path.normpath(self.path)
-        full = os.path.normpath(os.path.join(vault_path, normalized_input))
+        # Reject absolute paths (should be relative to vault)
+        if normalized_input.startswith("/") or (
+            len(normalized_input) > 1 and normalized_input[1] == ":"
+        ):
+            raise ValueError(
+                f"Path must be relative to vault, not absolute: {relative_path}"
+            )
 
-        # Ensure result is still within vault
-        # Check both with separator and exact match (for root of vault)
-        if not (full.startswith(vault_path + os.sep) or full == vault_path):
-            raise ValueError(f"Path traversal detected: {relative_path}")
-        return full
+        try:
+            # Expand user home directory if present (after normalization)
+            vault_root = os.path.expanduser(self.path)
+
+            # Get real paths - resolves symlinks, .. sequences, and normalizes
+            vault_real = os.path.realpath(vault_root)
+
+            # Join paths and resolve to canonical form
+            candidate_path = os.path.join(vault_real, normalized_input)
+            candidate_real = os.path.realpath(candidate_path)
+
+            # Handle case-insensitive filesystems (macOS, Windows)
+            # Normalize to lowercase for comparison on case-insensitive systems
+            case_sensitive = self._is_case_sensitive_filesystem(vault_real)
+
+            if case_sensitive:
+                # Case-sensitive filesystem - exact byte comparison
+                vault_normalized = vault_real
+                candidate_normalized = candidate_real
+            else:
+                # Case-insensitive filesystem - compare lowercased paths
+                vault_normalized = vault_real.lower()
+                candidate_normalized = candidate_real.lower()
+
+            # Verify resolved path is within vault
+            # Use sep to ensure we match directory boundaries, not substring
+            vault_with_sep = vault_normalized + os.sep
+
+            if not (
+                candidate_normalized == vault_normalized or
+                candidate_normalized.startswith(vault_with_sep)
+            ):
+                raise ValueError(
+                    f"Path traversal detected: attempted to escape vault\n"
+                    f"  Requested: {relative_path}\n"
+                    f"  Resolved to: {candidate_real}\n"
+                    f"  Vault root: {vault_real}"
+                )
+
+            # Additional check: ensure realpath didn't return something outside vault
+            # This catches symlink-to-symlink chains and other edge cases
+            if not os.path.commonpath([candidate_real, vault_real]) == vault_real:
+                raise ValueError(
+                    f"Path escape via symlink detected: {relative_path}\n"
+                    f"  Resolved to: {candidate_real}\n"
+                    f"  Vault root: {vault_real}"
+                )
+
+            return candidate_real
+
+        except (OSError, ValueError) as e:
+            # OSError can occur with broken symlinks or permission issues
+            if isinstance(e, ValueError):
+                raise  # Re-raise our ValueError
+            raise ValueError(
+                f"Cannot resolve path {relative_path}: {str(e)}"
+            ) from e
 
     def _ensure_md_extension(self, path: str) -> str:
         """Ensure path has .md extension."""

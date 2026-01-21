@@ -8,10 +8,10 @@ version: "3.8"
 services:
   # Vector store for memory (warm layer)
   chromadb:
-    image: chromadb/chroma:latest
+    image: chromadb/chroma:0.4.22
     container_name: claude-code-pp-chroma
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - chroma-data:/chroma/chroma
     environment:
@@ -26,13 +26,13 @@ services:
 
   # Fast cache and session memory (hot layer)
   redis:
-    image: redis:alpine
+    image: redis:7.2-alpine
     container_name: claude-code-pp-redis
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis-data:/data
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD required}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -42,14 +42,14 @@ services:
 
   # LiteLLM proxy for model routing and cost optimization
   litellm:
-    image: ghcr.io/berriai/litellm:main-latest
+    image: ghcr.io/berriai/litellm:v1.41.24
     container_name: claude-code-pp-litellm
     ports:
-      - "4000:4000"
+      - "127.0.0.1:4000:4000"
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-1234}
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY required}
     volumes:
       - ../config/litellm.yaml:/app/config.yaml:ro
     command: --config /app/config.yaml --detailed_debug
@@ -65,10 +65,10 @@ services:
 
   # Browser automation (optional)
   playwright:
-    image: mcr.microsoft.com/playwright:latest
+    image: mcr.microsoft.com/playwright:v1.45.0-focal
     container_name: claude-code-pp-playwright
     ports:
-      - "9222:9222"
+      - "127.0.0.1:9222:9222"
     shm_size: 2gb
     profiles:
       - browser
@@ -76,10 +76,10 @@ services:
 
   # Local LLM server via Ollama (optional)
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.1.33
     container_name: claude-code-pp-ollama
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"
     volumes:
       - ollama-data:/root/.ollama
     profiles:
@@ -108,7 +108,7 @@ services:
 
   # CI/CD simulation with Act (optional)
   act:
-    image: ghcr.io/nektos/act:latest
+    image: ghcr.io/nektos/act:v0.2.62
     container_name: claude-code-pp-act
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
