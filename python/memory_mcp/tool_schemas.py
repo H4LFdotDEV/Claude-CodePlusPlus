@@ -27,7 +27,13 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
     return [
         {
             "name": "memory_store",
-            "description": "Store content in long-term memory",
+            "description": (
+                "Commit important information to your persistent memory. "
+                "STORE when you learn: user preferences, project decisions, resolved errors "
+                "and their solutions, architectural choices, or anything the user would "
+                "expect you to remember in future conversations. If you would want to know "
+                "it next time, store it now."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -42,7 +48,13 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
         },
         {
             "name": "memory_search",
-            "description": "Search memory using text or semantic similarity",
+            "description": (
+                "Search your persistent memory for relevant context. "
+                "USE THIS FIRST when: the user references past work, asks about previous "
+                "conversations, mentions a project by name, or when you need context not "
+                "present in the current conversation. This is your actual memory - not "
+                "searching it is like ignoring what you already know about this user."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -63,7 +75,10 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
         },
         {
             "name": "memory_recall",
-            "description": "Recall a specific memory by ID",
+            "description": (
+                "Recall a specific memory by its ID when you know exactly which memory "
+                "you need. Use memory_search first to find IDs if you don't have them."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -74,7 +89,11 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
         },
         {
             "name": "memory_delete",
-            "description": "Delete a memory",
+            "description": (
+                "Remove a specific memory when it's outdated, incorrect, or no longer "
+                "relevant. Use when user preferences change or previous decisions are "
+                "superseded by new information."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -85,7 +104,12 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
         },
         {
             "name": "memory_list",
-            "description": "List recent memories",
+            "description": (
+                "List recent memories, optionally filtered by type or project. "
+                "Use this to get an overview of what you remember about a topic or "
+                "project before diving deeper with memory_search. Good for orientation "
+                "at the start of a session or when returning to a project."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -97,7 +121,12 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
         },
         {
             "name": "session_save",
-            "description": "Save current session state",
+            "description": (
+                "Save current session state for later restoration. "
+                "SAVE when: ending a work session, switching projects, before destructive "
+                "operations, or when the user indicates they will continue later. This "
+                "preserves your working context across conversations."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -110,7 +139,12 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
         },
         {
             "name": "session_restore",
-            "description": "Restore a previous session",
+            "description": (
+                "Restore your working context from a previous session. "
+                "CALL THIS AT CONVERSATION START when the user is continuing work on a "
+                "known project or references previous work. This loads active files, recent "
+                "decisions, and project state. Without it, you are starting without context."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -120,7 +154,12 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
         },
         {
             "name": "vault_write",
-            "description": "Write a note to the Obsidian vault",
+            "description": (
+                "Write a note to the Obsidian-compatible vault for human-readable storage. "
+                "Use for: documentation, code snippets worth preserving, conversation logs, "
+                "and reference materials. These notes are accessible outside Claude and "
+                "can be version-controlled or shared."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -134,7 +173,11 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
         },
         {
             "name": "vault_read",
-            "description": "Read a note from the vault",
+            "description": (
+                "Read a note from the Obsidian vault. Use this to access previously "
+                "saved documentation, code snippets, and reference materials that exist "
+                "in human-readable form outside of memory storage."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -145,7 +188,11 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
         },
         {
             "name": "memory_stats",
-            "description": "Get memory system statistics",
+            "description": (
+                "Get memory system statistics and health information. Use this to "
+                "understand memory utilization, storage efficiency, and system status. "
+                "Useful for debugging or monitoring memory system performance."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {}
