@@ -1,0 +1,17 @@
+# Memory MCP Server - Claude Code++
+# Core dependencies
+pyyaml>=6.0
+numpy>=1.24
+
+# Hot cache layer (optional but recommended)
+redis>=4.0
+
+# Vector search (optional but recommended)
+faiss-cpu>=1.7
+
+# Embedding providers (optional - needed for semantic search)
+httpx>=0.24
+
+# Development
+pytest>=7.0
+pytest-asyncio>=0.21

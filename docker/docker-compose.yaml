@@ -1,0 +1,156 @@
+# Docker Compose Stack for Claude Code++
+# Jeremiah Kroesche | Halfservers LLC
+#
+# This provides the containerized infrastructure for Claude Code++
+
+version: "3.8"
+
+services:
+  # Vector store for memory (warm layer)
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: claude-code-pp-chroma
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma-data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Fast cache and session memory (hot layer)
+  redis:
+    image: redis:alpine
+    container_name: claude-code-pp-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # LiteLLM proxy for model routing and cost optimization
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: claude-code-pp-litellm
+    ports:
+      - "4000:4000"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-1234}
+    volumes:
+      - ../config/litellm.yaml:/app/config.yaml:ro
+    command: --config /app/config.yaml --detailed_debug
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Browser automation (optional)
+  playwright:
+    image: mcr.microsoft.com/playwright:latest
+    container_name: claude-code-pp-playwright
+    ports:
+      - "9222:9222"
+    shm_size: 2gb
+    profiles:
+      - browser
+    restart: unless-stopped
+
+  # Local LLM server via Ollama (optional)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: claude-code-pp-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    profiles:
+      - local-llm
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # Test runner container (optional)
+  test-runner:
+    build:
+      context: ./containers/test-runner
+      dockerfile: Dockerfile
+    container_name: claude-code-pp-test-runner
+    volumes:
+      - ${HOME}/projects:/projects:ro
+      - test-results:/results
+    profiles:
+      - testing
+    restart: "no"
+
+  # CI/CD simulation with Act (optional)
+  act:
+    image: ghcr.io/nektos/act:latest
+    container_name: claude-code-pp-act
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${HOME}/projects:/projects
+    profiles:
+      - cicd
+    restart: "no"
+
+volumes:
+  chroma-data:
+    name: claude-code-pp-chroma-data
+  redis-data:
+    name: claude-code-pp-redis-data
+  ollama-data:
+    name: claude-code-pp-ollama-data
+  test-results:
+    name: claude-code-pp-test-results
+
+networks:
+  default:
+    name: claude-code-pp-network
+
+# Usage:
+# 
+# Start core services:
+#   docker-compose up -d
+#
+# Start with browser automation:
+#   docker-compose --profile browser up -d
+#
+# Start with local LLM:
+#   docker-compose --profile local-llm up -d
+#
+# Start everything:
+#   docker-compose --profile browser --profile local-llm --profile testing --profile cicd up -d
+#
+# Stop all:
+#   docker-compose down
+#
+# View logs:
+#   docker-compose logs -f
+#
+# Pull Ollama models (after starting ollama service):
+#   docker exec claude-code-pp-ollama ollama pull nomic-embed-text
+#   docker exec claude-code-pp-ollama ollama pull gemma:2b

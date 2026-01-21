@@ -1,0 +1,251 @@
+# Claude Code++ Settings
+# Jeremiah Kroesche | Halfservers LLC
+#
+# Main configuration file. Copy to ~/.claude-code-pp/config/settings.yaml
+
+version: "1.0.0"
+
+# System Control Configuration
+system_control:
+  # Preferred control method: swift | applescript | hybrid
+  preferred_method: "hybrid"
+  
+  # Hybrid routing determines method based on task
+  hybrid_routing:
+    screen_reading: "swift"
+    keyboard_input: "swift"
+    mouse_clicks: "swift"
+    app_specific: "applescript"
+    terminal_commands: "applescript"
+    file_operations: "applescript"
+  
+  # Current permission level (0-5)
+  # 0=sandboxed, 1=standard, 2=automation, 3=accessibility, 4=administrator, 5=unrestricted
+  permission_level: 1
+  
+  # Safety controls
+  safety:
+    require_confirmation_for:
+      - "destructive_operations"
+      - "financial_transactions"
+      - "external_communications"
+    
+    rate_limits:
+      clicks_per_second: 10
+      keys_per_second: 1000
+      scrolls_per_second: 20
+    
+    blocked_commands:
+      - "sudo rm -rf /"
+      - "format c:"
+
+# SSH Configuration
+ssh:
+  enabled: true
+  method: "terminal"  # terminal | native
+  known_hosts: "~/.ssh/known_hosts"
+  allowed_hosts:
+    - "*.halfservers.com"
+    - "localhost"
+  require_confirmation: true
+
+# Memory Configuration
+memory:
+  enabled: true
+  
+  # Storage paths
+  paths:
+    vault: "~/.claude-code-pp/memory/vault"
+    faiss: "~/.claude-code-pp/memory/faiss"
+    database: "~/.claude-code-pp/memory/metadata.db"
+  
+  # Hot layer (Redis)
+  redis:
+    enabled: true
+    host: "localhost"
+    port: 6379
+    db: 0
+  
+  # Warm layer (FAISS)
+  faiss:
+    index_type: "flat"  # flat | ivf | hnsw
+    rebuild_threshold: 0.1
+  
+  # Auto-memory triggers
+  auto_store:
+    - "on_file_save"
+    - "on_conversation_end"
+    - "on_tool_use"
+
+# Embedding Configuration
+embeddings:
+  provider: "local"
+  
+  providers:
+    local:
+      model: "nomic-embed-text"
+      endpoint: "http://localhost:11434"
+      dimensions: 768
+      batch_size: 32
+    
+    openai:
+      model: "text-embedding-3-small"
+      dimensions: 1536
+      batch_size: 100
+    
+    voyage:
+      model: "voyage-code-2"
+      dimensions: 1536
+      batch_size: 50
+    
+    custom:
+      endpoint: "${EMBEDDING_ENDPOINT}"
+      model: "${EMBEDDING_MODEL}"
+      headers:
+        Authorization: "Bearer ${EMBEDDING_API_KEY}"
+  
+  fallback_order:
+    - "local"
+    - "openai"
+  
+  track_usage: true
+
+# LiteLLM Configuration
+litellm:
+  enabled: true
+  proxy_url: "http://localhost:4000"
+  
+  # Model routing
+  routing:
+    default: "claude-3-5-sonnet"
+    
+    rules:
+      - task: "simple_search"
+        model: "local/gemma"
+        max_cost: 0
+      
+      - task: "quick_question"
+        model: "claude-3-5-haiku"
+        max_cost: 0.01
+      
+      - task: "code_generation"
+        model: "claude-3-5-sonnet"
+        max_cost: 0.10
+      
+      - task: "architecture"
+        model: "claude-3-opus"
+        max_cost: 0.50
+  
+  # Cost limits
+  limits:
+    per_request: 1.00
+    per_hour: 10.00
+    per_day: 50.00
+  
+  # Observability
+  observability:
+    track_tokens: true
+    track_latency: true
+    track_cache_hits: true
+
+# Template Expansion
+expansion:
+  enabled: true
+  
+  paths:
+    env: "~/.claude-code-pp/expansion/env"
+    templates: "~/.claude-code-pp/expansion/templates"
+    snippets: "~/.claude-code-pp/expansion/snippets"
+  
+  # Dynamic variables (always available)
+  dynamic_vars:
+    - "CWD"
+    - "HOME"
+    - "DATE"
+    - "TIMESTAMP"
+    - "CURRENT_BRANCH"
+    - "PROJECT_NAME"
+
+# Marketplace Configuration
+marketplace:
+  # Curated marketplace (ships with app)
+  curated:
+    enabled: true
+    auto_update: true
+    update_channel: "stable"  # stable | beta | nightly
+  
+  # GitHub sources
+  github_sources: []
+  # Example:
+  # - repo: "anthropics/mcp-servers"
+  #   branch: "main"
+  #   trust_level: "verified"
+  
+  # Trust policies
+  trust_policies:
+    verified:
+      auto_install: true
+      show_code_review: false
+    community:
+      auto_install: false
+      show_code_review: true
+      require_confirmation: true
+    unknown:
+      blocked: true
+
+# Docker Configuration
+docker:
+  enabled: true
+  compose_file: "~/.claude-code-pp/docker-compose.yaml"
+  
+  services:
+    chromadb:
+      enabled: true
+      port: 8000
+    
+    redis:
+      enabled: true
+      port: 6379
+    
+    litellm:
+      enabled: true
+      port: 4000
+    
+    playwright:
+      enabled: false
+      port: 9222
+
+# Logging
+logging:
+  level: "info"  # debug | info | warn | error
+  
+  paths:
+    system: "~/.claude-code-pp/logs/system.log"
+    actions: "~/.claude-code-pp/logs/actions.log"
+    errors: "~/.claude-code-pp/logs/errors.log"
+    audit: "~/.claude-code-pp/logs/audit.log"
+  
+  # Log rotation
+  rotation:
+    max_size_mb: 100
+    max_files: 5
+
+# UI Preferences
+ui:
+  theme: "dark"
+  
+  # Spatial interface settings (future)
+  spatial:
+    enabled: false
+    platform: "web"  # web | visionos | ios
+  
+  # Voice mode settings (future)
+  voice:
+    enabled: false
+    wake_word: "hey claude"
+
+# Onboarding
+onboarding:
+  completed: false
+  show_tutorial: true
+  tutorial_pace: "interactive"  # interactive | quick | skip

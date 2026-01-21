@@ -1,0 +1,86 @@
+{
+  "mcpServers": {
+    "claude-code-pp-memory": {
+      "command": "python3",
+      "args": ["-m", "memory_mcp.server"],
+      "env": {
+        "CLAUDE_CODE_PP_CONFIG": "~/.claude-code-pp/config/settings.yaml"
+      },
+      "description": "Claude Code++ Memory System - tiered memory with Redis, FAISS, SQLite, and Obsidian vault"
+    },
+    "claude-code-pp-system": {
+      "command": "${HOME}/.claude-code-pp/bin/system-controller",
+      "args": ["--stdio"],
+      "description": "Claude Code++ System Controller - macOS accessibility API for screen reading, keyboard, mouse"
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+      },
+      "description": "GitHub operations - PRs, issues, repos"
+    },
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "description": "Anthropic's persistent memory across sessions"
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+      "description": "Chain-of-thought reasoning"
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@context7/mcp-server"],
+      "description": "Live documentation lookup"
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "${HOME}/projects"],
+      "description": "Filesystem operations (set your path)"
+    },
+    "firecrawl": {
+      "command": "npx",
+      "args": ["-y", "firecrawl-mcp"],
+      "env": {
+        "FIRECRAWL_API_KEY": "${FIRECRAWL_API_KEY}"
+      },
+      "description": "Web scraping and crawling"
+    },
+    "vercel": {
+      "type": "http",
+      "url": "https://mcp.vercel.com",
+      "description": "Vercel deployments and projects"
+    },
+    "cloudflare-docs": {
+      "type": "http",
+      "url": "https://docs.mcp.cloudflare.com/mcp",
+      "description": "Cloudflare documentation search"
+    },
+    "clickhouse": {
+      "type": "http",
+      "url": "https://mcp.clickhouse.cloud/mcp",
+      "description": "ClickHouse analytics queries"
+    },
+    "magic": {
+      "command": "npx",
+      "args": ["-y", "@magicuidesign/mcp@latest"],
+      "description": "Magic UI components"
+    }
+  },
+  "_comments": {
+    "usage": "Copy servers to ~/.claude.json mcpServers section",
+    "env_vars": "Set environment variables or replace ${VAR} placeholders",
+    "context_warning": "Keep under 10 MCPs enabled to preserve context window",
+    "installation": {
+      "claude-code-pp-memory": "cd python && pip install -e .[all]",
+      "claude-code-pp-system": "cd swift-system-controller && swift build -c release && cp .build/release/SystemControllerCLI ~/.claude-code-pp/bin/system-controller"
+    },
+    "optional_servers": {
+      "supabase": "npx -y @supabase/mcp-server-supabase@latest --project-ref=YOUR_REF",
+      "railway": "npx -y @railway/mcp-server"
+    }
+  }
+}
