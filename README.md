@@ -1,72 +1,196 @@
-# Claude Code
+# Claude Code++
 
-![](https://img.shields.io/badge/Node.js-18%2B-brightgreen?style=flat-square) [![npm]](https://www.npmjs.com/package/@anthropic-ai/claude-code)
+An AI-native development environment that extends Claude Code with persistent memory, system control, and intelligent model routing.
 
-[npm]: https://img.shields.io/npm/v/@anthropic-ai/claude-code.svg?style=flat-square
+## Overview
 
-Claude Code is an agentic coding tool that lives in your terminal, understands your codebase, and helps you code faster by executing routine tasks, explaining complex code, and handling git workflows -- all through natural language commands. Use it in your terminal, IDE, or tag @claude on Github.
+Claude Code++ adds enterprise-grade capabilities to Claude Code through MCP (Model Context Protocol) servers:
 
-**Learn more in the [official documentation](https://code.claude.com/docs/en/overview)**.
+- **Memory MCP** - Four-tier persistent memory system (Redis → FAISS → SQLite → Obsidian)
+- **System Controller** - macOS Accessibility API integration for screen reading and system control
+- **Infrastructure** - Docker-based services for Redis, vector embeddings, and model routing
 
-<img src="./demo.gif" />
+## Architecture
 
-## Get started
-> [!NOTE]
-> Installation via npm is deprecated. Use one of the recommended methods below.
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Claude Code CLI                         │
+├─────────────────────────────────────────────────────────────┤
+│  MCP Servers                                                 │
+│  ├── Memory MCP (Python) - Tiered memory system             │
+│  ├── System Controller (Swift) - macOS Accessibility API    │
+│  └── External MCPs (filesystem, git, browser, etc.)         │
+├─────────────────────────────────────────────────────────────┤
+│  Infrastructure                                              │
+│  ├── Redis - Hot memory cache (port 6379)                   │
+│  ├── Neo4j - Knowledge graph (port 7687)                    │
+│  └── LiteLLM - Model routing (port 4000)                    │
+└─────────────────────────────────────────────────────────────┘
+```
 
-For more installation options, uninstall steps, and troubleshooting, see the [setup documentation](https://code.claude.com/docs/en/setup).
+## Memory Tiers
 
-1. Install Claude Code:
+| Tier | Storage | Access Time | Capacity | Use Case |
+|------|---------|-------------|----------|----------|
+| Hot | Redis | <1ms | 1000 items | Active session context |
+| Warm | FAISS + Graphiti | <10ms | 100k vectors | Recent context, knowledge graph |
+| Cold | SQLite + livegrep | <50ms | Unlimited | Long-term storage, code search |
+| Archive | Obsidian Vault | <100ms | Unlimited | Human-readable notes |
 
-    **MacOS/Linux (Recommended):**
-    ```bash
-    curl -fsSL https://claude.ai/install.sh | bash
-    ```
+## Quick Start
 
-    **Homebrew (MacOS/Linux):**
-    ```bash
-    brew install --cask claude-code
-    ```
+### Prerequisites
 
-    **Windows (Recommended):**
-    ```powershell
-    irm https://claude.ai/install.ps1 | iex
-    ```
+- [Claude Code CLI](https://claude.ai/code) installed
+- Docker and Docker Compose
+- Python 3.11+
+- macOS (for System Controller)
 
-    **WinGet (Windows):**
-    ```powershell
-    winget install Anthropic.ClaudeCode
-    ```
+### Installation
 
-    **NPM (Deprecated):**
-    ```bash
-    npm install -g @anthropic-ai/claude-code
-    ```
+```bash
+# Clone the repository
+git clone https://github.com/H4LFdotDEV/Claude-CodePlusPlus.git
+cd Claude-CodePlusPlus
 
-2. Navigate to your project directory and run `claude`.
+# Start infrastructure services
+docker-compose -f docker/docker-compose.yaml up -d
 
-## Plugins
+# Install Memory MCP
+cd python
+pip install -e .
 
-This repository includes several Claude Code plugins that extend functionality with custom commands and agents. See the [plugins directory](./plugins/README.md) for detailed documentation on available plugins.
+# Configure Claude Code to use MCP servers
+# Add to ~/.claude.json (see Configuration section)
+```
 
-## Reporting Bugs
+### Configuration
 
-We welcome your feedback. Use the `/bug` command to report issues directly within Claude Code, or file a [GitHub issue](https://github.com/anthropics/claude-code/issues).
+Add to your `~/.claude.json`:
 
-## Connect on Discord
+```json
+{
+  "mcpServers": {
+    "memory": {
+      "command": "python",
+      "args": ["-m", "memory_mcp.server"],
+      "env": {
+        "REDIS_URL": "redis://localhost:6379"
+      }
+    }
+  }
+}
+```
 
-Join the [Claude Developers Discord](https://anthropic.com/discord) to connect with other developers using Claude Code. Get help, share feedback, and discuss your projects with the community.
+## MCP Tools
 
-## Data collection, usage, and retention
+### Memory Operations
 
-When you use Claude Code, we collect feedback, which includes usage data (such as code acceptance or rejections), associated conversation data, and user feedback submitted via the `/bug` command.
+| Tool | Description |
+|------|-------------|
+| `memory_store` | Store content with type, tags, and importance |
+| `memory_search` | Semantic search across all tiers |
+| `memory_recall` | Retrieve by ID |
+| `memory_delete` | Remove memories |
+| `memory_list` | List memories by type/tag/project |
 
-### How we use your data
+### Session Management
 
-See our [data usage policies](https://code.claude.com/docs/en/data-usage).
+| Tool | Description |
+|------|-------------|
+| `session_save` | Persist current session state |
+| `session_restore` | Load previous session |
 
-### Privacy safeguards
+### Vault Operations
 
-We have implemented several safeguards to protect your data, including limited retention periods for sensitive information, restricted access to user session data, and clear policies against using feedback for model training.
+| Tool | Description |
+|------|-------------|
+| `vault_write` | Write to Obsidian vault |
+| `vault_read` | Read from Obsidian vault |
 
-For full details, please review our [Commercial Terms of Service](https://www.anthropic.com/legal/commercial-terms) and [Privacy Policy](https://www.anthropic.com/legal/privacy).
+### System Info
+
+| Tool | Description |
+|------|-------------|
+| `memory_stats` | Get memory statistics across all tiers |
+
+## Project Structure
+
+```
+Claude-CodePlusPlus/
+├── python/                    # Memory MCP Server
+│   ├── memory_mcp/           # Core modules
+│   │   ├── server.py         # MCP server implementation
+│   │   ├── redis_client.py   # Hot tier (Redis)
+│   │   ├── faiss_manager.py  # Warm tier (vector search)
+│   │   ├── graphiti_manager.py # Knowledge graph
+│   │   ├── sqlite_index.py   # Cold tier (metadata)
+│   │   └── vault_manager.py  # Archive tier (Obsidian)
+│   └── tests/                # Test suite (750+ tests)
+├── swift-system-controller/   # macOS System Controller
+├── docker/                    # Docker Compose configs
+├── config/                    # Configuration templates
+└── bruno/                     # API testing collection
+```
+
+## Environment Variables
+
+```bash
+# Required
+ANTHROPIC_API_KEY=sk-ant-...
+
+# Optional
+OPENAI_API_KEY=sk-...          # For OpenAI embeddings
+VOYAGE_API_KEY=...             # For Voyage embeddings
+NEO4J_PASSWORD=...             # For knowledge graph
+REDIS_URL=redis://localhost:6379
+```
+
+## Development
+
+### Running Tests
+
+```bash
+cd python
+pip install -e ".[dev]"
+pytest --cov=memory_mcp
+```
+
+### Building Swift Controller
+
+```bash
+cd swift-system-controller
+swift build
+swift test
+```
+
+## Docker Services
+
+```bash
+# Start all services
+docker-compose -f docker/docker-compose.yaml up -d
+
+# Check status
+docker-compose -f docker/docker-compose.yaml ps
+
+# View logs
+docker-compose -f docker/docker-compose.yaml logs -f
+```
+
+| Service | Port | Purpose |
+|---------|------|---------|
+| redis | 6379 | Hot memory cache |
+| neo4j | 7687 | Knowledge graph |
+| litellm | 4000 | Model routing |
+
+## License
+
+Apache 2.0 - See [LICENSE.md](LICENSE.md)
+
+## Contributing
+
+Contributions welcome! Please read the contributing guidelines before submitting PRs.
+
+## Acknowledgments
+
+Built to extend [Claude Code](https://claude.ai/code) by Anthropic.

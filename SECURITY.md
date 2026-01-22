@@ -1,12 +1,38 @@
 # Security Policy
-Thank you for helping us keep Claude Code secure!
 
 ## Reporting Security Issues
 
-The security of our systems and user data is Anthropic's top priority. We appreciate the work of security researchers acting in good faith in identifying and reporting potential vulnerabilities.
+If you discover a security vulnerability in Claude Code++, please report it responsibly:
 
-Our security program is managed on HackerOne and we ask that any validated vulnerability in this functionality be reported through their [submission form](https://hackerone.com/anthropic-vdp/reports/new?type=team&report_type=vulnerability).
+1. **Do not** open a public GitHub issue for security vulnerabilities
+2. Email security concerns to the maintainers directly
+3. Include details about the vulnerability and steps to reproduce
 
-## Vulnerability Disclosure Program
+## Security Measures
 
-Our Vulnerability Program Guidelines are defined on our [HackerOne program page](https://hackerone.com/anthropic-vdp).
+Claude Code++ implements several security measures:
+
+### Input Validation
+- All user inputs are validated before processing
+- SQL injection prevention with parameterized queries and LIKE pattern escaping
+- Path traversal prevention for configuration file loading
+
+### Memory Security
+- Redis connections use authentication when configured
+- Sensitive data is not logged
+- Session data has configurable TTL for automatic expiration
+
+### Code Security
+- No hardcoded secrets or credentials
+- Environment variables for all sensitive configuration
+- Thread-safe operations with proper locking
+
+## Supported Versions
+
+| Version | Supported          |
+| ------- | ------------------ |
+| 1.x     | :white_check_mark: |
+
+## Security Updates
+
+Security updates will be released as patch versions. Users are encouraged to keep their installations up to date.
