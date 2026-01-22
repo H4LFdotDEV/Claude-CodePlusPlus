@@ -552,7 +552,7 @@ class TestSessionSaveHandler:
 
         with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, mock_redis, None)):
             result = await call_tool("session_save", {
-                "project_path": "/home/user/project",
+                "project_path": "home/user/project",
                 "active_files": ["file1.py", "file2.py"],
                 "context": {"key": "value"}
             })
@@ -569,7 +569,7 @@ class TestSessionSaveHandler:
 
         with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
             result = await call_tool("session_save", {
-                "project_path": "/home/user/project"
+                "project_path": "home/user/project"
             })
 
             assert len(result) == 1
@@ -584,7 +584,7 @@ class TestSessionSaveHandler:
 
         with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, mock_redis, None)):
             result = await call_tool("session_save", {
-                "project_path": "/path"
+                "project_path": "path"
             })
 
             assert len(result) == 1
@@ -930,7 +930,7 @@ class TestIntegration:
         with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, mock_redis, None)):
             # Save
             save_result = await call_tool("session_save", {
-                "project_path": "/project"
+                "project_path": "project"
             })
             assert "Session saved" in save_result[0].text
 

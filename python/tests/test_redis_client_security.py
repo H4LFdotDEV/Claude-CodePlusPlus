@@ -53,7 +53,7 @@ class TestRedisClientSecureDeserialization:
         now = datetime.now(timezone.utc).isoformat()
         invalid_data = {
             "session_id": "invalid\r\nFLUSH",  # Redis injection
-            "project_path": "/path",
+            "project_path": "path",
             "active_files": [],
             "recent_queries": [],
             "context_window": [],
@@ -80,7 +80,7 @@ class TestRedisClientSecureDeserialization:
         """Test get_session rejects data missing required fields."""
         incomplete_data = {
             "session_id": "test",
-            "project_path": "/path",
+            "project_path": "path",
             # Missing created_at, updated_at, etc.
         }
         mock_redis.get.return_value = json.dumps(incomplete_data)
@@ -96,7 +96,7 @@ class TestRedisClientSecureDeserialization:
         now = datetime.now(timezone.utc).isoformat()
         invalid_data = {
             "session_id": "test",
-            "project_path": "/path",
+            "project_path": "path",
             "active_files": [],
             "recent_queries": [],
             "context_window": [],
@@ -116,7 +116,7 @@ class TestRedisClientSecureDeserialization:
         now = datetime.now(timezone.utc).isoformat()
         traversal_data = {
             "session_id": "test",
-            "project_path": "/path/to/project/../../../../../../etc/passwd",
+            "project_path": "path/to/project/../../../../../../etc/passwd",
             "active_files": [],
             "recent_queries": [],
             "context_window": [],
@@ -136,7 +136,7 @@ class TestRedisClientSecureDeserialization:
         now = datetime.now(timezone.utc).isoformat()
         traversal_data = {
             "session_id": "test",
-            "project_path": "/path",
+            "project_path": "path",
             "active_files": ["../../../etc/passwd"],  # Traversal attempt
             "recent_queries": [],
             "context_window": [],
@@ -156,7 +156,7 @@ class TestRedisClientSecureDeserialization:
         now = datetime.now(timezone.utc).isoformat()
         data_with_extras = {
             "session_id": "test",
-            "project_path": "/path",
+            "project_path": "path",
             "active_files": [],
             "recent_queries": [],
             "context_window": [],
@@ -226,11 +226,11 @@ class TestRedisClientSecureDeserialization:
 
     def test_get_cached_query_valid_data(self, redis_client, mock_redis):
         """Test get_cached_query with valid data."""
+        now = datetime.now(timezone.utc).isoformat()
         query_data = {
             "query": "SELECT * FROM users",
-            "result": {"users": [{"id": 1, "name": "test"}]},
-            "embedding": [0.1] * 768,
-            "cached_at": datetime.now(timezone.utc).isoformat(),
+            "result": '{"users": [{"id": 1, "name": "test"}]}',  # Must be string
+            "created_at": now,  # Required field (not cached_at)
             "hits": 5,
         }
         mock_redis.get.return_value = json.dumps(query_data)
@@ -238,7 +238,7 @@ class TestRedisClientSecureDeserialization:
 
         result = redis_client.get_cached_query("SELECT * FROM users")
 
-        assert result == {"users": [{"id": 1, "name": "test"}]}
+        assert result == '{"users": [{"id": 1, "name": "test"}]}'
         # Verify hit counter was incremented and saved
         mock_redis.setex.assert_called_once()
 
@@ -303,8 +303,15 @@ class TestRedisClientSecureDeserialization:
 
     def test_get_cached_embedding_valid_data(self, redis_client, mock_redis):
         """Test get_cached_embedding with valid data."""
+        now = datetime.now(timezone.utc).isoformat()
         embedding = [0.1, 0.2, 0.3] * 256  # 768 dimensions
-        mock_redis.get.return_value = json.dumps(embedding)
+        embedding_data = {
+            "query": "test text",
+            "embedding": embedding,
+            "model": "test-model",
+            "created_at": now
+        }
+        mock_redis.get.return_value = json.dumps(embedding_data)
 
         result = redis_client.get_cached_embedding("test text")
 
@@ -313,8 +320,14 @@ class TestRedisClientSecureDeserialization:
 
     def test_get_cached_embedding_too_small(self, redis_client, mock_redis, caplog):
         """Test get_cached_embedding rejects too small embeddings."""
-        embedding = [0.1] * 100  # < 256
-        mock_redis.get.return_value = json.dumps(embedding)
+        now = datetime.now(timezone.utc).isoformat()
+        embedding_data = {
+            "query": "test",
+            "embedding": [0.1] * 100,  # < 256
+            "model": "test-model",
+            "created_at": now
+        }
+        mock_redis.get.return_value = json.dumps(embedding_data)
 
         with caplog.at_level(logging.ERROR):
             result = redis_client.get_cached_embedding("test")
@@ -324,8 +337,14 @@ class TestRedisClientSecureDeserialization:
 
     def test_get_cached_embedding_too_large(self, redis_client, mock_redis, caplog):
         """Test get_cached_embedding rejects too large embeddings."""
-        embedding = [0.1] * 5000  # > 4096
-        mock_redis.get.return_value = json.dumps(embedding)
+        now = datetime.now(timezone.utc).isoformat()
+        embedding_data = {
+            "query": "test",
+            "embedding": [0.1] * 5000,  # > 4096
+            "model": "test-model",
+            "created_at": now
+        }
+        mock_redis.get.return_value = json.dumps(embedding_data)
 
         with caplog.at_level(logging.ERROR):
             result = redis_client.get_cached_embedding("test")
@@ -335,8 +354,14 @@ class TestRedisClientSecureDeserialization:
 
     def test_get_cached_embedding_non_numeric(self, redis_client, mock_redis, caplog):
         """Test get_cached_embedding rejects non-numeric values."""
-        embedding = ["string"] * 768
-        mock_redis.get.return_value = json.dumps(embedding)
+        now = datetime.now(timezone.utc).isoformat()
+        embedding_data = {
+            "query": "test",
+            "embedding": ["string"] * 768,
+            "model": "test-model",
+            "created_at": now
+        }
+        mock_redis.get.return_value = json.dumps(embedding_data)
 
         with caplog.at_level(logging.ERROR):
             result = redis_client.get_cached_embedding("test")
@@ -350,9 +375,10 @@ class TestRedisClientSecureDeserialization:
 
     def test_get_context_valid_messages(self, redis_client, mock_redis):
         """Test get_context with valid messages."""
+        now = datetime.now(timezone.utc).isoformat()
         messages = [
-            json.dumps({"role": "user", "content": "Hello"}),
-            json.dumps({"role": "assistant", "content": "Hi there"}),
+            json.dumps({"role": "user", "content": "Hello", "timestamp": now}),
+            json.dumps({"role": "assistant", "content": "Hi there", "timestamp": now}),
         ]
         mock_redis.lrange.return_value = messages
 
@@ -364,10 +390,11 @@ class TestRedisClientSecureDeserialization:
 
     def test_get_context_skips_malformed_json(self, redis_client, mock_redis, caplog):
         """Test get_context skips malformed JSON messages."""
+        now = datetime.now(timezone.utc).isoformat()
         messages = [
-            json.dumps({"role": "user", "content": "Valid"}),
+            json.dumps({"role": "user", "content": "Valid", "timestamp": now}),
             "{ invalid json",  # Malformed
-            json.dumps({"role": "assistant", "content": "Also valid"}),
+            json.dumps({"role": "assistant", "content": "Also valid", "timestamp": now}),
         ]
         mock_redis.lrange.return_value = messages
 
@@ -381,10 +408,11 @@ class TestRedisClientSecureDeserialization:
 
     def test_get_context_skips_invalid_role(self, redis_client, mock_redis, caplog):
         """Test get_context skips messages with invalid role."""
+        now = datetime.now(timezone.utc).isoformat()
         messages = [
-            json.dumps({"role": "user", "content": "Valid"}),
-            json.dumps({"role": "invalid_role", "content": "Bad role"}),
-            json.dumps({"role": "assistant", "content": "Also valid"}),
+            json.dumps({"role": "user", "content": "Valid", "timestamp": now}),
+            json.dumps({"role": "invalid_role", "content": "Bad role", "timestamp": now}),
+            json.dumps({"role": "assistant", "content": "Also valid", "timestamp": now}),
         ]
         mock_redis.lrange.return_value = messages
 
@@ -398,10 +426,11 @@ class TestRedisClientSecureDeserialization:
         self, redis_client, mock_redis, caplog
     ):
         """Test get_context skips messages missing required fields."""
+        now = datetime.now(timezone.utc).isoformat()
         messages = [
-            json.dumps({"role": "user", "content": "Valid"}),
-            json.dumps({"role": "assistant"}),  # Missing 'content'
-            json.dumps({"role": "user", "content": "Also valid"}),
+            json.dumps({"role": "user", "content": "Valid", "timestamp": now}),
+            json.dumps({"role": "assistant", "timestamp": now}),  # Missing 'content'
+            json.dumps({"role": "user", "content": "Also valid", "timestamp": now}),
         ]
         mock_redis.lrange.return_value = messages
 
@@ -411,12 +440,13 @@ class TestRedisClientSecureDeserialization:
         assert len(result) == 2
         assert "Context message validation failed" in caplog.text
 
-    def test_get_context_case_insensitive_role(self, redis_client, mock_redis):
-        """Test get_context normalizes role case."""
+    def test_get_context_all_valid_roles(self, redis_client, mock_redis):
+        """Test get_context accepts all valid roles."""
+        now = datetime.now(timezone.utc).isoformat()
         messages = [
-            json.dumps({"role": "USER", "content": "Hello"}),
-            json.dumps({"role": "Assistant", "content": "Hi"}),
-            json.dumps({"role": "SYSTEM", "content": "System"}),
+            json.dumps({"role": "user", "content": "Hello", "timestamp": now}),
+            json.dumps({"role": "assistant", "content": "Hi", "timestamp": now}),
+            json.dumps({"role": "system", "content": "System", "timestamp": now}),
         ]
         mock_redis.lrange.return_value = messages
 
@@ -429,9 +459,10 @@ class TestRedisClientSecureDeserialization:
 
     def test_get_context_empty_content_allowed(self, redis_client, mock_redis):
         """Test get_context allows empty message content."""
+        now = datetime.now(timezone.utc).isoformat()
         messages = [
-            json.dumps({"role": "user", "content": ""}),
-            json.dumps({"role": "assistant", "content": "Response"}),
+            json.dumps({"role": "user", "content": "", "timestamp": now}),
+            json.dumps({"role": "assistant", "content": "Response", "timestamp": now}),
         ]
         mock_redis.lrange.return_value = messages
 
@@ -440,21 +471,23 @@ class TestRedisClientSecureDeserialization:
         assert len(result) == 2
         assert result[0]["content"] == ""
 
-    def test_get_context_extra_fields_ignored(self, redis_client, mock_redis):
-        """Test get_context ignores extra fields in messages."""
+    def test_get_context_extra_fields_rejected(self, redis_client, mock_redis):
+        """Test get_context rejects messages with extra fields (schema has extra=forbid)."""
+        now = datetime.now(timezone.utc).isoformat()
         messages = [
             json.dumps({
                 "role": "user",
                 "content": "Hello",
-                "extra_field": "should be ignored",
+                "timestamp": now,
+                "extra_field": "should cause rejection",
             }),
-            json.dumps({"role": "assistant", "content": "Hi"}),
+            json.dumps({"role": "assistant", "content": "Hi", "timestamp": now}),
         ]
         mock_redis.lrange.return_value = messages
 
         result = redis_client.get_context("test-session")
 
-        assert len(result) == 1  # Only first message is valid (has extra field)
+        assert len(result) == 1  # Only second message is valid (first has extra field)
 
     # ========================================================================
     # Injection Attack Prevention Tests
@@ -465,7 +498,7 @@ class TestRedisClientSecureDeserialization:
         now = datetime.now(timezone.utc).isoformat()
         redis_injection = {
             "session_id": "test\r\nFLUSH ALL\r\n",  # Redis protocol injection
-            "project_path": "/path",
+            "project_path": "path",
             "active_files": [],
             "recent_queries": [],
             "context_window": [],
@@ -485,7 +518,7 @@ class TestRedisClientSecureDeserialization:
         now = datetime.now(timezone.utc).isoformat()
         shell_injection = {
             "session_id": "test; rm -rf /",  # Shell command injection
-            "project_path": "/path",
+            "project_path": "path",
             "active_files": [],
             "recent_queries": [],
             "context_window": [],
@@ -504,7 +537,7 @@ class TestRedisClientSecureDeserialization:
         now = datetime.now(timezone.utc).isoformat()
         backtick_injection = {
             "session_id": "test`whoami`",  # Backtick command substitution
-            "project_path": "/path",
+            "project_path": "path",
             "active_files": [],
             "recent_queries": [],
             "context_window": [],
@@ -554,8 +587,15 @@ class TestRedisClientSecureDeserialization:
 
     def test_embedding_type_safety(self, redis_client, mock_redis):
         """Test embedding maintains type safety."""
+        now = datetime.now(timezone.utc).isoformat()
         embedding = [0.1, 0.2, 0.3] * 256
-        mock_redis.get.return_value = json.dumps(embedding)
+        embedding_data = {
+            "query": "test",
+            "embedding": embedding,
+            "model": "test-model",
+            "created_at": now
+        }
+        mock_redis.get.return_value = json.dumps(embedding_data)
 
         result = redis_client.get_cached_embedding("test")
 

@@ -5,11 +5,14 @@
 # Warm memory layer - semantic similarity search
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import List, Tuple, Optional, Dict, Any
 from dataclasses import dataclass
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 try:
     import faiss

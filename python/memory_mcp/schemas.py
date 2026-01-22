@@ -59,42 +59,6 @@ def validate_embedding_vector(vector: List[float]) -> List[float]:
     return vector
 
 # Models
-class SessionStateModel(BaseModel):
-    """Validated session state from Redis."""
-    session_id: str = Field(...)
-    project_path: str = Field(...)
-    active_files: List[str] = Field(default_factory=list)
-    context: Dict[str, Any] = Field(default_factory=dict)
-    created_at: str = Field(...)
-    updated_at: str = Field(...)
-
-    @field_validator("session_id")
-    @classmethod
-    def check_session_id(cls, v: str) -> str:
-        return validate_session_id(v)
-
-    @field_validator("project_path")
-    @classmethod
-    def check_project_path(cls, v: str) -> str:
-        return validate_path(v)
-
-    @field_validator("active_files")
-    @classmethod
-    def check_active_files(cls, v: List[str]) -> List[str]:
-        if not isinstance(v, list):
-            raise ValueError("active_files must be list")
-        for f in v:
-            validate_path(f)
-        return v
-
-    @field_validator("created_at", "updated_at")
-    @classmethod
-    def check_timestamps(cls, v: str) -> str:
-        return validate_iso_timestamp(v)
-
-    class Config:
-        extra = "forbid"
-
 class MemoryItemModel(BaseModel):
     """Validated memory item from Redis."""
     id: str = Field(...)
@@ -271,3 +235,152 @@ def validate_context_window(data: Dict[str, Any]) -> ContextWindowModel:
 def validate_tool_call(data: Dict[str, Any]) -> ToolCallModel:
     """Validate tool call from Redis."""
     return validate_redis_data(data, ToolCallModel)
+
+
+# ============================================================================
+# ADDITIONAL MODELS FOR REDIS_CLIENT INTEGRATION
+# ============================================================================
+
+class ContextWindowMessageModel(BaseModel):
+    """Validated context window message."""
+    role: str = Field(..., description="Message role")
+    content: str = Field(..., description="Message content")
+    timestamp: str = Field(...)
+
+    @field_validator("role")
+    @classmethod
+    def check_role(cls, v: str) -> str:
+        if v not in {"user", "assistant", "system"}:
+            raise ValueError(f"Invalid role: {v}")
+        return v
+
+    @field_validator("content")
+    @classmethod
+    def check_content(cls, v: str) -> str:
+        if not isinstance(v, str) or len(v) > 100_000:
+            raise ValueError("Invalid content")
+        return v
+
+    @field_validator("timestamp")
+    @classmethod
+    def check_timestamp(cls, v: str) -> str:
+        return validate_iso_timestamp(v)
+
+    class Config:
+        extra = "forbid"
+
+
+class TemplateCacheModel(BaseModel):
+    """Validated template cache from Redis."""
+    content: str = Field(..., max_length=100_000)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    cached_at: str = Field(...)
+
+    @field_validator("metadata")
+    @classmethod
+    def check_metadata(cls, v: Dict[str, Any]) -> Dict[str, Any]:
+        if len(str(v)) > 50_000:
+            raise ValueError("Metadata too large")
+        return v
+
+    @field_validator("cached_at")
+    @classmethod
+    def check_cached_at(cls, v: str) -> str:
+        return validate_iso_timestamp(v)
+
+    class Config:
+        extra = "forbid"
+
+
+class QueryCacheModel(BaseModel):
+    """Validated query cache from Redis."""
+    query: str = Field(..., max_length=10_000)
+    result: str = Field(..., max_length=500_000)
+    created_at: str = Field(...)
+    hits: int = Field(default=0, ge=0, le=1_000_000)
+
+    @field_validator("query")
+    @classmethod
+    def check_query(cls, v: str) -> str:
+        if not isinstance(v, str) or not v.strip():
+            raise ValueError("Query cannot be empty")
+        return v
+
+    @field_validator("result")
+    @classmethod
+    def check_result(cls, v: str) -> str:
+        if not isinstance(v, str):
+            raise ValueError("Result must be string")
+        return v
+
+    @field_validator("created_at")
+    @classmethod
+    def check_created_at(cls, v: str) -> str:
+        return validate_iso_timestamp(v)
+
+    class Config:
+        extra = "forbid"
+
+
+# Update SessionStateModel to use ContextWindowMessageModel
+class SessionStateModel(BaseModel):
+    """Validated session state from Redis."""
+    session_id: str = Field(...)
+    project_path: str = Field(...)
+    active_files: List[str] = Field(default_factory=list)
+    recent_queries: List[str] = Field(default_factory=list)
+    context_window: List[ContextWindowMessageModel] = Field(default_factory=list)
+    created_at: str = Field(...)
+    updated_at: str = Field(...)
+
+    @field_validator("session_id")
+    @classmethod
+    def check_session_id(cls, v: str) -> str:
+        return validate_session_id(v)
+
+    @field_validator("project_path")
+    @classmethod
+    def check_project_path(cls, v: str) -> str:
+        return validate_path(v)
+
+    @field_validator("active_files")
+    @classmethod
+    def check_active_files(cls, v: List[str]) -> List[str]:
+        if not isinstance(v, list):
+            raise ValueError("active_files must be list")
+        for f in v:
+            validate_path(f)
+        return v
+
+    @field_validator("recent_queries")
+    @classmethod
+    def check_recent_queries(cls, v: List[str]) -> List[str]:
+        if not isinstance(v, list) or len(v) > 1000:
+            raise ValueError("Invalid recent_queries")
+        for q in v:
+            if not isinstance(q, str) or len(q) > 10_000:
+                raise ValueError("Invalid query in recent_queries")
+        return v
+
+    @field_validator("created_at", "updated_at")
+    @classmethod
+    def check_timestamps(cls, v: str) -> str:
+        return validate_iso_timestamp(v)
+
+    class Config:
+        extra = "forbid"
+
+
+# Helper functions for redis_client integration
+def validate_template_cache(data: Dict[str, Any]) -> TemplateCacheModel:
+    """Validate template cache from Redis."""
+    return validate_redis_data(data, TemplateCacheModel)
+
+
+def validate_query_cache(data: Dict[str, Any]) -> QueryCacheModel:
+    """Validate query cache from Redis."""
+    return validate_redis_data(data, QueryCacheModel)
+
+
+# Backward compatibility alias for redis_client
+ContextWindowItemModel = ContextWindowMessageModel

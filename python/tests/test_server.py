@@ -228,7 +228,7 @@ class TestSessionManagement:
             server = MemoryMCPServer(config=test_config)
 
             result = server.handle_call_tool("session_save", {
-                "project_path": "/test/project",
+                "project_path": "test/project",
                 "active_files": ["file.py"],
                 "context": {}
             })

@@ -182,10 +182,10 @@ def sample_session_state():
     now = datetime.now(timezone.utc).isoformat()
     return SessionState(
         session_id="test-session-001",
-        project_path="/test/project",
+        project_path="test/project",  # Relative path (no leading /)
         active_files=["file1.py", "file2.py"],
         recent_queries=["query1", "query2"],
-        context_window=[{"role": "user", "content": "test"}],
+        context_window=[{"role": "user", "content": "test", "timestamp": now}],
         created_at=now,
         updated_at=now,
     )

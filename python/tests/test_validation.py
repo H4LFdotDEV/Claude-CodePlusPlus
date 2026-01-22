@@ -284,7 +284,7 @@ class TestValidateContent:
     def test_exceeds_1mb_limit(self):
         """Test content exceeding 1MB raises ValueError."""
         content_over_limit = "x" * (MAX_CONTENT_SIZE + 1)
-        with pytest.raises(ValueError, match="exceeds maximum"):
+        with pytest.raises(ValueError, match="(exceeds maximum|must be at most)"):
             validate_content(content_over_limit, "content")
 
     def test_unicode_content_valid(self):

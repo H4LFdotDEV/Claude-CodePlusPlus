@@ -186,7 +186,7 @@ def validate_content(value: Any, name: str = "content") -> str:
         ValueError: If content exceeds size limit or is empty
         TypeError: From validate_string
     """
-    content = validate_string(value, name, min_len=1)
+    content = validate_string(value, name, min_len=1, max_len=MAX_CONTENT_SIZE)
     content_bytes = len(content.encode('utf-8'))
     if content_bytes > MAX_CONTENT_SIZE:
         raise ValueError(

@@ -3,11 +3,12 @@
 # Jeremiah Kroesche | Halfservers LLC
 #
 # Hot memory layer - session state, recent queries, templates
+# SECURITY: Uses Pydantic models for safe JSON deserialization
 
 import json
 import hashlib
+import logging
 from typing import Optional, Dict, Any, List
-from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 
 try:
@@ -17,36 +18,100 @@ except ImportError:
     REDIS_AVAILABLE = False
     redis = None
 
+from pydantic import ValidationError
+
 from .config import get_config, RedisConfig
+from .schemas import (
+    SessionStateModel,
+    TemplateCacheModel,
+    QueryCacheModel,
+    EmbeddingCacheModel,
+    ContextWindowItemModel,
+)
+
+logger = logging.getLogger(__name__)
 
 
-@dataclass
+# ============================================================================
+# BACKWARD COMPATIBILITY LAYER
+# ============================================================================
+
 class SessionState:
-    """Current session state stored in Redis."""
-    session_id: str
-    project_path: str
-    active_files: List[str]
-    recent_queries: List[str]
-    context_window: List[Dict[str, Any]]
-    created_at: str
-    updated_at: str
+    """
+    Session state class for backward compatibility.
+
+    SECURITY NOTE: This is a legacy interface. New code should use
+    SessionStateModel from schemas.py instead.
+    """
+
+    def __init__(
+        self,
+        session_id: str,
+        project_path: str,
+        active_files: List[str],
+        recent_queries: List[str],
+        context_window: List[Dict[str, Any]],
+        created_at: str,
+        updated_at: str,
+    ):
+        self.session_id = session_id
+        self.project_path = project_path
+        self.active_files = active_files
+        self.recent_queries = recent_queries
+        self.context_window = context_window
+        self.created_at = created_at
+        self.updated_at = updated_at
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        return {
+            "session_id": self.session_id,
+            "project_path": self.project_path,
+            "active_files": self.active_files,
+            "recent_queries": self.recent_queries,
+            "context_window": self.context_window,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "SessionState":
-        return cls(**data)
+        """Create from dict (VALIDATED via Pydantic)."""
+        # Validate using Pydantic model first
+        validated = SessionStateModel(**data)
+        # Convert back to dict for backward compat
+        return cls(
+            session_id=validated.session_id,
+            project_path=validated.project_path,
+            active_files=validated.active_files,
+            recent_queries=validated.recent_queries,
+            context_window=[
+                msg.model_dump() for msg in validated.context_window
+            ],
+            created_at=validated.created_at,
+            updated_at=validated.updated_at,
+        )
 
 
-@dataclass
 class CachedQuery:
-    """Cached query result."""
-    query: str
-    result: Any
-    embedding: Optional[List[float]]
-    created_at: str
-    hits: int = 0
+    """
+    Cached query result class.
+
+    SECURITY NOTE: This is a legacy interface.
+    """
+
+    def __init__(
+        self,
+        query: str,
+        result: Any,
+        embedding: Optional[List[float]],
+        created_at: str,
+        hits: int = 0,
+    ):
+        self.query = query
+        self.result = result
+        self.embedding = embedding
+        self.created_at = created_at
+        self.hits = hits
 
 
 class RedisClient:
@@ -131,16 +196,62 @@ class RedisClient:
             return False
 
     def get_session(self, session_id: str) -> Optional[SessionState]:
-        """Retrieve session state."""
+        """
+        Retrieve and validate session state.
+
+        SECURITY: Validates session data using Pydantic schema before
+        deserializing to SessionState object. Prevents injection attacks
+        and ensures data integrity.
+
+        Args:
+            session_id: Session identifier to retrieve
+
+        Returns:
+            SessionState object if found and valid, None otherwise
+
+        Raises:
+            ConnectionError: If Redis is not connected
+        """
         self._ensure_connected()
         key = f"{self.PREFIX_SESSION}{session_id}"
 
         try:
             data = self._client.get(key)
-            if data:
-                return SessionState.from_dict(json.loads(data))
-            return None
-        except (redis.RedisError, json.JSONDecodeError):
+            if data is None:
+                return None
+
+            # Parse JSON
+            try:
+                raw_data = json.loads(data)
+            except json.JSONDecodeError as e:
+                logger.error(
+                    "Failed to parse session JSON for %s: %s",
+                    session_id,
+                    e,
+                    extra={"key": key}
+                )
+                return None
+
+            # Validate using Pydantic schema
+            try:
+                validated = SessionStateModel(**raw_data)
+                return SessionState.from_dict(validated.model_dump())
+            except ValidationError as e:
+                logger.error(
+                    "Session data validation failed for %s: %s",
+                    session_id,
+                    e,
+                    extra={"key": key, "errors": e.errors()}
+                )
+                return None
+
+        except redis.RedisError as e:
+            logger.error(
+                "Redis error retrieving session %s: %s",
+                session_id,
+                e,
+                extra={"key": key}
+            )
             return None
 
     def delete_session(self, session_id: str) -> bool:
@@ -180,16 +291,61 @@ class RedisClient:
             return False
 
     def get_template(self, name: str) -> Optional[str]:
-        """Get cached template content."""
+        """
+        Get and validate cached template content.
+
+        SECURITY: Validates template data using Pydantic schema before
+        extracting content. Prevents malformed data from causing issues.
+
+        Args:
+            name: Template name/identifier
+
+        Returns:
+            Template content string if found and valid, None otherwise
+
+        Raises:
+            ConnectionError: If Redis is not connected
+        """
         self._ensure_connected()
         key = f"{self.PREFIX_TEMPLATE}{name}"
 
         try:
             data = self._client.get(key)
-            if data:
-                return json.loads(data).get("content")
-            return None
-        except (redis.RedisError, json.JSONDecodeError):
+            if data is None:
+                return None
+
+            # Parse JSON
+            try:
+                raw_data = json.loads(data)
+            except json.JSONDecodeError as e:
+                logger.error(
+                    "Failed to parse template JSON for %s: %s",
+                    name,
+                    e,
+                    extra={"key": key}
+                )
+                return None
+
+            # Validate using Pydantic schema
+            try:
+                validated = TemplateCacheModel(**raw_data)
+                return validated.content
+            except ValidationError as e:
+                logger.error(
+                    "Template data validation failed for %s: %s",
+                    name,
+                    e,
+                    extra={"key": key, "errors": e.errors()}
+                )
+                return None
+
+        except redis.RedisError as e:
+            logger.error(
+                "Redis error retrieving template %s: %s",
+                name,
+                e,
+                extra={"key": key}
+            )
             return None
 
     def list_templates(self) -> List[str]:
@@ -230,25 +386,77 @@ class RedisClient:
             return False
 
     def get_cached_query(self, query: str) -> Optional[Any]:
-        """Get cached query result."""
+        """
+        Get and validate cached query result.
+
+        SECURITY: Validates query cache data using Pydantic schema before
+        returning result. Prevents injection of malformed results.
+
+        Args:
+            query: The query string (will be hashed)
+
+        Returns:
+            Cached query result if found and valid, None otherwise
+
+        Raises:
+            ConnectionError: If Redis is not connected
+        """
         self._ensure_connected()
         query_hash = self._query_hash(query)
         key = f"{self.PREFIX_QUERY}{query_hash}"
 
         try:
             data = self._client.get(key)
-            if data:
-                parsed = json.loads(data)
-                # Increment hit counter
-                parsed["hits"] = parsed.get("hits", 0) + 1
-                self._client.setex(
-                    key,
-                    self.config.ttl_queries,
-                    json.dumps(parsed)
+            if data is None:
+                return None
+
+            # Parse JSON
+            try:
+                raw_data = json.loads(data)
+            except json.JSONDecodeError as e:
+                logger.error(
+                    "Failed to parse query cache JSON for %s: %s",
+                    query_hash,
+                    e,
+                    extra={"key": key, "query": query}
                 )
-                return parsed.get("result")
-            return None
-        except (redis.RedisError, json.JSONDecodeError):
+                return None
+
+            # Validate using Pydantic schema
+            try:
+                validated = QueryCacheModel(**raw_data)
+                # Increment hit counter atomically
+                updated_data = validated.model_dump()
+                updated_data["hits"] = validated.hits + 1
+                try:
+                    self._client.setex(
+                        key,
+                        self.config.ttl_queries,
+                        json.dumps(updated_data)
+                    )
+                except redis.RedisError as e:
+                    logger.warning(
+                        "Failed to update query cache hit counter: %s", e,
+                        extra={"key": key}
+                    )
+                    # Continue anyway - hit counter is not critical
+                return validated.result
+            except ValidationError as e:
+                logger.error(
+                    "Query cache validation failed for %s: %s",
+                    query_hash,
+                    e,
+                    extra={"key": key, "errors": e.errors(), "query": query}
+                )
+                return None
+
+        except redis.RedisError as e:
+            logger.error(
+                "Redis error retrieving query cache %s: %s",
+                query_hash,
+                e,
+                extra={"key": key}
+            )
             return None
 
     # Embedding Cache
@@ -270,17 +478,63 @@ class RedisClient:
             return False
 
     def get_cached_embedding(self, text: str) -> Optional[List[float]]:
-        """Get cached embedding."""
+        """
+        Get and validate cached embedding.
+
+        SECURITY: Validates embedding data using Pydantic schema before
+        returning. Ensures embedding vector has expected format and size.
+
+        Args:
+            text: The text to get embedding for (will be hashed)
+
+        Returns:
+            Embedding vector if found and valid, None otherwise
+
+        Raises:
+            ConnectionError: If Redis is not connected
+        """
         self._ensure_connected()
         text_hash = hashlib.sha256(text.encode()).hexdigest()[:16]
         key = f"{self.PREFIX_EMBEDDING}{text_hash}"
 
         try:
             data = self._client.get(key)
-            if data:
-                return json.loads(data)
-            return None
-        except (redis.RedisError, json.JSONDecodeError):
+            if data is None:
+                return None
+
+            # Parse JSON
+            try:
+                raw_data = json.loads(data)
+            except json.JSONDecodeError as e:
+                logger.error(
+                    "Failed to parse embedding JSON for %s: %s",
+                    text_hash,
+                    e,
+                    extra={"key": key}
+                )
+                return None
+
+            # Validate using Pydantic schema
+            try:
+                # Raw JSON contains the full EmbeddingCacheModel structure
+                validated = EmbeddingCacheModel(**raw_data)
+                return validated.embedding
+            except ValidationError as e:
+                logger.error(
+                    "Embedding validation failed for %s: %s",
+                    text_hash,
+                    e,
+                    extra={"key": key, "errors": e.errors()}
+                )
+                return None
+
+        except redis.RedisError as e:
+            logger.error(
+                "Redis error retrieving embedding %s: %s",
+                text_hash,
+                e,
+                extra={"key": key}
+            )
             return None
 
     # Context Window Management
@@ -299,15 +553,87 @@ class RedisClient:
         except redis.RedisError:
             return False
 
-    def get_context(self, session_id: str, limit: int = 20) -> List[Dict[str, Any]]:
-        """Get recent context window messages."""
+    def get_context(
+        self, session_id: str, limit: int = 20
+    ) -> List[Dict[str, Any]]:
+        """
+        Get and validate recent context window messages.
+
+        SECURITY: Validates each context message using Pydantic schema
+        before returning. Skips invalid messages with logging.
+
+        Args:
+            session_id: Session identifier
+            limit: Maximum number of messages to return
+
+        Returns:
+            List of validated context messages (invalid ones filtered out)
+
+        Raises:
+            ConnectionError: If Redis is not connected
+        """
         self._ensure_connected()
         key = f"{self.PREFIX_CONTEXT}{session_id}"
 
         try:
             messages = self._client.lrange(key, 0, limit - 1)
-            return [json.loads(m) for m in messages]
-        except (redis.RedisError, json.JSONDecodeError):
+            validated_messages = []
+
+            for i, message_json in enumerate(messages):
+                try:
+                    # Parse JSON
+                    try:
+                        raw_data = json.loads(message_json)
+                    except json.JSONDecodeError as e:
+                        logger.warning(
+                            "Failed to parse context message JSON at index %d "
+                            "for session %s: %s",
+                            i,
+                            session_id,
+                            e,
+                            extra={"key": key}
+                        )
+                        continue
+
+                    # Validate using Pydantic schema
+                    try:
+                        validated = ContextWindowItemModel(**raw_data)
+                        validated_messages.append(validated.model_dump())
+                    except ValidationError as e:
+                        logger.warning(
+                            "Context message validation failed at index %d "
+                            "for session %s: %s",
+                            i,
+                            session_id,
+                            e,
+                            extra={
+                                "key": key,
+                                "errors": e.errors(),
+                                "index": i
+                            }
+                        )
+                        continue
+
+                except Exception as e:
+                    logger.error(
+                        "Unexpected error processing context message at "
+                        "index %d for session %s: %s",
+                        i,
+                        session_id,
+                        e,
+                        extra={"key": key, "index": i}
+                    )
+                    continue
+
+            return validated_messages
+
+        except redis.RedisError as e:
+            logger.error(
+                "Redis error retrieving context for %s: %s",
+                session_id,
+                e,
+                extra={"key": key}
+            )
             return []
 
     def clear_context(self, session_id: str) -> bool:

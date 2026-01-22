@@ -161,7 +161,7 @@ class TestFAISSManager:
         assert "doc-001" in new_manager.reverse_map
 
     def test_needs_rebuild(self, faiss_manager):
-        """Test rebuild threshold detection."""
+        """Test rebuild threshold detection and automatic rebuild."""
         # Initially shouldn't need rebuild
         assert not faiss_manager.needs_rebuild()
 
@@ -170,11 +170,13 @@ class TestFAISSManager:
             embedding = np.random.rand(768).astype(np.float32)
             faiss_manager.add(f"doc-{i:03d}", embedding)
 
-        # Delete 2 (20% > 10% threshold)
+        # Delete 2 (20% > 10% threshold) - this triggers automatic rebuild via maybe_rebuild()
         faiss_manager.delete("doc-000")
         faiss_manager.delete("doc-001")
 
-        assert faiss_manager.needs_rebuild()
+        # After automatic rebuild, needs_rebuild should return False
+        # (the delete method calls maybe_rebuild() which rebuilds when threshold exceeded)
+        assert not faiss_manager.needs_rebuild()
 
     def test_len(self, faiss_manager, random_embedding):
         """Test __len__ returns count."""

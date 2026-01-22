@@ -1065,8 +1065,11 @@ memory:
             restricted_dir = os.path.join(tmpdir, "restricted", "subdir")
             config.base_path = restricted_dir
 
-            # Make parent directory read-only
+            # Create the parent directory first
             parent = os.path.dirname(restricted_dir)
+            os.makedirs(parent, exist_ok=True)
+
+            # Make parent directory read-only
             os.chmod(parent, 0o444)
 
             try:

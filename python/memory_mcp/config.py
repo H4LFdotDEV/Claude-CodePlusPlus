@@ -86,6 +86,9 @@ class MemoryConfig:
             port=redis_data.get("port", 6379),
             db=redis_data.get("db", 0),
             password=redis_data.get("password"),
+            ttl_session=redis_data.get("ttl_session", 3600),
+            ttl_templates=redis_data.get("ttl_templates", 86400),
+            ttl_queries=redis_data.get("ttl_queries", 3600),
         )
 
         # FAISS config

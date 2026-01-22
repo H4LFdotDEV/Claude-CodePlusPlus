@@ -117,7 +117,7 @@ class TestEndpointAvailability:
     def test_session_save_endpoint_available(self, mcp_server):
         """Test session_save endpoint responds with valid structure."""
         result = mcp_server.handle_call_tool("session_save", {
-            "project_path": "/health_check/project",
+            "project_path": "health_check/project",
             "active_files": ["file1.py", "file2.py"],
             "context": {"test": "health_check"}
         })
@@ -130,7 +130,7 @@ class TestEndpointAvailability:
         """Test session_restore endpoint responds with valid structure."""
         # Save first
         save_result = mcp_server.handle_call_tool("session_save", {
-            "project_path": "/health_check/restore_project",
+            "project_path": "health_check/restore_project",
         })
 
         result = mcp_server.handle_call_tool("session_restore", {})
@@ -324,7 +324,7 @@ class TestGracefulDegradation:
             server = MemoryMCPServer(config=test_config)
 
             result = server.handle_call_tool("session_save", {
-                "project_path": "/fallback/project",
+                "project_path": "fallback/project",
                 "active_files": ["file.py"],
                 "context": {"fallback": True}
             })

@@ -253,12 +253,20 @@ Content:
             return [TextContent(type="text", text="Session save requires Redis (not available)")]
         from .redis_client import SessionState
         import uuid
+        from datetime import datetime, timezone
         session_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).isoformat()
+        context = arguments.get("context", {})
+        # Convert context dict to context_window list format
+        context_window = [context] if context else []
         state = SessionState(
             session_id=session_id,
             project_path=arguments["project_path"],
             active_files=arguments.get("active_files", []),
-            context=arguments.get("context", {})
+            recent_queries=[],
+            context_window=context_window,
+            created_at=now,
+            updated_at=now
         )
         redis.save_session(state)
         return [TextContent(type="text", text=f"Session saved with ID: {session_id}")]

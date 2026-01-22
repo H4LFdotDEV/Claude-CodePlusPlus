@@ -140,15 +140,15 @@ class TestRedisClientWithMock:
 
     def test_get_cached_query_hit(self, redis_client, mock_redis):
         """Test cache hit for query."""
+        now = datetime.now(timezone.utc).isoformat()
         mock_redis.get.return_value = json.dumps({
             "query": "cached query",
-            "result": {"answer": "cached"},
-            "embedding": None,
-            "cached_at": datetime.now(timezone.utc).isoformat(),
+            "result": '{"answer": "cached"}',  # Result must be a string
+            "created_at": now,
             "hits": 5
         })
         result = redis_client.get_cached_query("cached query")
-        assert result == {"answer": "cached"}
+        assert result == '{"answer": "cached"}'
 
     def test_cache_embedding(self, redis_client, mock_redis):
         """Test caching an embedding."""
@@ -168,8 +168,15 @@ class TestRedisClientWithMock:
 
     def test_get_cached_embedding_hit(self, redis_client, mock_redis):
         """Test cache hit for embedding."""
-        embedding = [0.1, 0.2, 0.3]
-        mock_redis.get.return_value = json.dumps(embedding)
+        now = datetime.now(timezone.utc).isoformat()
+        # Embedding must be 256-4096 dimensions per validate_embedding_vector
+        embedding = [0.1] * 256
+        mock_redis.get.return_value = json.dumps({
+            "query": "cached text",
+            "embedding": embedding,
+            "model": "test-model",
+            "created_at": now
+        })
         result = redis_client.get_cached_embedding("cached text")
         assert result == embedding
 
@@ -182,9 +189,10 @@ class TestRedisClientWithMock:
 
     def test_get_context(self, redis_client, mock_redis):
         """Test getting context window."""
+        now = datetime.now(timezone.utc).isoformat()
         mock_redis.lrange.return_value = [
-            json.dumps({"role": "user", "content": "Hi"}),
-            json.dumps({"role": "assistant", "content": "Hello"})
+            json.dumps({"role": "user", "content": "Hi", "timestamp": now}),
+            json.dumps({"role": "assistant", "content": "Hello", "timestamp": now})
         ]
         context = redis_client.get_context("session-id", limit=10)
         assert len(context) == 2
@@ -214,10 +222,13 @@ class TestRedisClientConnection:
 
     def test_connect_failure(self, test_config):
         """Test handling connection failure."""
-        with patch.object(redis, 'Redis') as mock_redis_class:
+        with patch("memory_mcp.redis_client.redis") as mock_redis_module:
+            # Need to keep the real exception classes
+            mock_redis_module.ConnectionError = redis.ConnectionError
+            mock_redis_module.RedisError = redis.RedisError
             mock_instance = MagicMock()
-            mock_instance.ping.side_effect = Exception("Connection refused")
-            mock_redis_class.return_value = mock_instance
+            mock_instance.ping.side_effect = redis.ConnectionError("Connection refused")
+            mock_redis_module.Redis.return_value = mock_instance
             from memory_mcp.redis_client import RedisClient
 
             client = RedisClient(config=test_config.redis)
