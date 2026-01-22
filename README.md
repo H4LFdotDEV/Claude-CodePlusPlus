@@ -15,30 +15,30 @@ Claude Code++ adds enterprise-grade capabilities to Claude Code through MCP (Mod
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│                           CLAUDE CODE++                                       │
+│                           CLAUDE CODE++                                      │
 ├──────────────────────────────────────────────────────────────────────────────┤
-│                                                                               │
+│                                                                              │
 │  MEMORY SYSTEM (What Claude Knows)                                           │
-│  ┌──────────┐  ┌───────────┐  ┌───────────┐  ┌───────────────────┐          │
-│  │  Redis   │  │ Graphiti  │  │ livegrep  │  │  Obsidian Vault   │          │
-│  │  (Hot)   │→ │  (Warm)   │→ │  (Cold)   │→ │  (Archive)        │          │
-│  │ Session  │  │ Knowledge │  │ All-time  │  │  Human-readable   │          │
-│  │ context  │  │ graph     │  │ artifacts │  │  export           │          │
-│  └──────────┘  └───────────┘  └───────────┘  └───────────────────┘          │
-│                                                                               │
+│  ┌──────────┐  ┌───────────┐  ┌───────────┐  ┌───────────────────┐           │
+│  │  Redis   │  │ Graphiti  │  │ livegrep  │  │  Obsidian Vault   │           │
+│  │  (Hot)   │→ │  (Warm)   │→ │  (Cold)   │→ │  (Archive)        │           │
+│  │ Session  │  │ Knowledge │  │ All-time  │  │  Human-readable   │           │
+│  │ context  │  │ graph     │  │ artifacts │  │  export           │           │
+│  └──────────┘  └───────────┘  └───────────┘  └───────────────────┘           │
+│                                                                              │
 │  SEARCH SYSTEM (How Claude Finds Things)                                     │
-│  ┌──────────┐  ┌───────────┐  ┌───────────┐  ┌───────────────────┐          │
-│  │  Hound   │  │ livegrep  │  │ Graphiti  │  │  Nomic + LanceDB  │          │
-│  │ Project  │  │ Global    │  │ Graph     │  │  Semantic         │          │
-│  │ regex    │  │ regex     │  │ traversal │  │  intent search    │          │
-│  └──────────┘  └───────────┘  └───────────┘  └───────────────────┘          │
-│                                                                               │
-│  INFRASTRUCTURE                                                               │
-│  ┌──────────┐  ┌───────────┐  ┌───────────┐  ┌───────────────────┐          │
-│  │  Redis   │  │  Neo4j    │  │  SQLite   │  │  LiteLLM Router   │          │
-│  │  Cache   │  │  Graph DB │  │  Metadata │  │  Model routing    │          │
-│  └──────────┘  └───────────┘  └───────────┘  └───────────────────┘          │
-│                                                                               │
+│  ┌──────────┐  ┌───────────┐  ┌───────────┐  ┌───────────────────┐           │
+│  │  Hound   │  │ livegrep  │  │ Graphiti  │  │  Nomic + LanceDB  │           │
+│  │ Project  │  │ Global    │  │ Graph     │  │  Semantic         │           │
+│  │ regex    │  │ regex     │  │ traversal │  │  intent search    │           │
+│  └──────────┘  └───────────┘  └───────────┘  └───────────────────┘           │
+│                                                                              │
+│  INFRASTRUCTURE                                                              │
+│  ┌──────────┐  ┌───────────┐  ┌───────────┐  ┌───────────────────┐           │
+│  │  Redis   │  │  Neo4j    │  │  SQLite   │  │  LiteLLM Router   │           │
+│  │  Cache   │  │  Graph DB │  │  Metadata │  │  Model routing    │           │
+│  └──────────┘  └───────────┘  └───────────┘  └───────────────────┘           │
+│                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -146,19 +146,19 @@ Add to your `~/.claude.json`:
 
 ```
 Claude-CodePlusPlus/
-├── python/                    # Memory MCP Server
-│   ├── memory_mcp/           # Core modules
-│   │   ├── server.py         # MCP server implementation
-│   │   ├── redis_client.py   # Hot tier (Redis)
+├── python/                     # Memory MCP Server
+│   ├── memory_mcp/             # Core modules
+│   │   ├── server.py           # MCP server implementation
+│   │   ├── redis_client.py     # Hot tier (Redis)
 │   │   ├── graphiti_manager.py # Warm tier (knowledge graph)
 │   │   ├── livegrep_client.py  # Cold tier (artifact search)
 │   │   ├── sqlite_index.py   # Metadata storage
 │   │   └── vault_manager.py  # Archive tier (Obsidian)
-│   └── tests/                # Test suite (750+ tests)
-├── swift-system-controller/   # macOS System Controller
-├── docker/                    # Docker Compose configs
-├── config/                    # Configuration templates
-└── bruno/                     # API testing collection
+│   └── tests/                  # Test suite (750+ tests)
+├── swift-system-controller/    # macOS System Controller
+├── docker/                     # Docker Compose configs
+├── config/                     # Configuration templates
+└── bruno/                      # API testing collection
 ```
 
 ## Environment Variables

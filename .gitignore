@@ -31,6 +31,9 @@ config/*.local.yaml
 # Keep plugin/subproject READMEs
 !plugins/**/README.md
 !python/README.md
+# Keep wiki documentation
+!wiki/*.md
+!CLAUDE.md
 
 # Archive and working files
 Archive/
