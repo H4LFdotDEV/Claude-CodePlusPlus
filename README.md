@@ -1,41 +1,66 @@
 # Claude Code++
 
-An AI-native development environment that extends Claude Code with persistent memory, system control, and intelligent model routing.
+An AI-native development environment that extends Claude Code with persistent memory, intelligent search, and system control.
 
 ## Overview
 
 Claude Code++ adds enterprise-grade capabilities to Claude Code through MCP (Model Context Protocol) servers:
 
-- **Memory MCP** - Four-tier persistent memory system (Redis → FAISS → SQLite → Obsidian)
-- **System Controller** - macOS Accessibility API integration for screen reading and system control
-- **Infrastructure** - Docker-based services for Redis, vector embeddings, and model routing
+- **Memory MCP** - Four-tier persistent memory (Redis → Graphiti → livegrep → Obsidian)
+- **Search MCP** - Multi-layer search (Hound → livegrep → Graphiti → Semantic)
+- **System Controller** - macOS Accessibility API integration
+- **Infrastructure** - Docker-based services for Redis, Neo4j, and model routing
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      Claude Code CLI                         │
-├─────────────────────────────────────────────────────────────┤
-│  MCP Servers                                                 │
-│  ├── Memory MCP (Python) - Tiered memory system             │
-│  ├── System Controller (Swift) - macOS Accessibility API    │
-│  └── External MCPs (filesystem, git, browser, etc.)         │
-├─────────────────────────────────────────────────────────────┤
-│  Infrastructure                                              │
-│  ├── Redis - Hot memory cache (port 6379)                   │
-│  ├── Neo4j - Knowledge graph (port 7687)                    │
-│  └── LiteLLM - Model routing (port 4000)                    │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                           CLAUDE CODE++                                       │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                               │
+│  MEMORY SYSTEM (What Claude Knows)                                           │
+│  ┌──────────┐  ┌───────────┐  ┌───────────┐  ┌───────────────────┐          │
+│  │  Redis   │  │ Graphiti  │  │ livegrep  │  │  Obsidian Vault   │          │
+│  │  (Hot)   │→ │  (Warm)   │→ │  (Cold)   │→ │  (Archive)        │          │
+│  │ Session  │  │ Knowledge │  │ All-time  │  │  Human-readable   │          │
+│  │ context  │  │ graph     │  │ artifacts │  │  export           │          │
+│  └──────────┘  └───────────┘  └───────────┘  └───────────────────┘          │
+│                                                                               │
+│  SEARCH SYSTEM (How Claude Finds Things)                                     │
+│  ┌──────────┐  ┌───────────┐  ┌───────────┐  ┌───────────────────┐          │
+│  │  Hound   │  │ livegrep  │  │ Graphiti  │  │  Nomic + LanceDB  │          │
+│  │ Project  │  │ Global    │  │ Graph     │  │  Semantic         │          │
+│  │ regex    │  │ regex     │  │ traversal │  │  intent search    │          │
+│  └──────────┘  └───────────┘  └───────────┘  └───────────────────┘          │
+│                                                                               │
+│  INFRASTRUCTURE                                                               │
+│  ┌──────────┐  ┌───────────┐  ┌───────────┐  ┌───────────────────┐          │
+│  │  Redis   │  │  Neo4j    │  │  SQLite   │  │  LiteLLM Router   │          │
+│  │  Cache   │  │  Graph DB │  │  Metadata │  │  Model routing    │          │
+│  └──────────┘  └───────────┘  └───────────┘  └───────────────────┘          │
+│                                                                               │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Memory Tiers
 
-| Tier | Storage | Access Time | Capacity | Use Case |
-|------|---------|-------------|----------|----------|
-| Hot | Redis | <1ms | 1000 items | Active session context |
-| Warm | FAISS + Graphiti | <10ms | 100k vectors | Recent context, knowledge graph |
-| Cold | SQLite + livegrep | <50ms | Unlimited | Long-term storage, code search |
-| Archive | Obsidian Vault | <100ms | Unlimited | Human-readable notes |
+| Tier | Technology | Purpose | Access Time |
+|------|------------|---------|-------------|
+| **Hot** | Redis | Session state, working context | <1ms |
+| **Warm** | Graphiti/Neo4j | Knowledge graph (entities, relationships, temporal facts) | <10ms |
+| **Cold** | livegrep | All historical code and artifacts | <50ms |
+| **Archive** | Obsidian Vault | Human-readable markdown export | <100ms |
+
+**Note:** SQLite stores metadata only (timestamps, tags, indexes) - not a primary storage tier.
+
+## Search Layers
+
+| Layer | Technology | Scope | Use Case |
+|-------|------------|-------|----------|
+| **Project** | Hound | Current project | Fast local regex search |
+| **Global** | livegrep | All projects, all time | Cross-project pattern matching |
+| **Graph** | Graphiti | Relationship traversal | "What uses this?" queries |
+| **Semantic** | Nomic Embed + LanceDB | Intent-based | "Find authentication code" |
 
 ## Quick Start
 
@@ -75,7 +100,8 @@ Add to your `~/.claude.json`:
       "command": "python",
       "args": ["-m", "memory_mcp.server"],
       "env": {
-        "REDIS_URL": "redis://localhost:6379"
+        "REDIS_URL": "redis://localhost:6379",
+        "NEO4J_URI": "bolt://localhost:7687"
       }
     }
   }
@@ -89,10 +115,18 @@ Add to your `~/.claude.json`:
 | Tool | Description |
 |------|-------------|
 | `memory_store` | Store content with type, tags, and importance |
-| `memory_search` | Semantic search across all tiers |
-| `memory_recall` | Retrieve by ID |
-| `memory_delete` | Remove memories |
+| `memory_recall` | Retrieve relevant context by ID or pattern |
+| `memory_delete` | Remove memories (privacy deletion) |
 | `memory_list` | List memories by type/tag/project |
+| `memory_stats` | Get memory statistics across all tiers |
+
+### Knowledge Graph (via Graphiti)
+
+| Tool | Description |
+|------|-------------|
+| `get_entity` | Knowledge graph entity lookup |
+| `trace_relationship` | Graph traversal queries |
+| `get_timeline` | Temporal queries ("what changed last week?") |
 
 ### Session Management
 
@@ -108,12 +142,6 @@ Add to your `~/.claude.json`:
 | `vault_write` | Write to Obsidian vault |
 | `vault_read` | Read from Obsidian vault |
 
-### System Info
-
-| Tool | Description |
-|------|-------------|
-| `memory_stats` | Get memory statistics across all tiers |
-
 ## Project Structure
 
 ```
@@ -122,9 +150,9 @@ Claude-CodePlusPlus/
 │   ├── memory_mcp/           # Core modules
 │   │   ├── server.py         # MCP server implementation
 │   │   ├── redis_client.py   # Hot tier (Redis)
-│   │   ├── faiss_manager.py  # Warm tier (vector search)
-│   │   ├── graphiti_manager.py # Knowledge graph
-│   │   ├── sqlite_index.py   # Cold tier (metadata)
+│   │   ├── graphiti_manager.py # Warm tier (knowledge graph)
+│   │   ├── livegrep_client.py  # Cold tier (artifact search)
+│   │   ├── sqlite_index.py   # Metadata storage
 │   │   └── vault_manager.py  # Archive tier (Obsidian)
 │   └── tests/                # Test suite (750+ tests)
 ├── swift-system-controller/   # macOS System Controller
@@ -139,11 +167,14 @@ Claude-CodePlusPlus/
 # Required
 ANTHROPIC_API_KEY=sk-ant-...
 
-# Optional
-OPENAI_API_KEY=sk-...          # For OpenAI embeddings
-VOYAGE_API_KEY=...             # For Voyage embeddings
-NEO4J_PASSWORD=...             # For knowledge graph
+# Memory System
 REDIS_URL=redis://localhost:6379
+NEO4J_URI=bolt://localhost:7687
+NEO4J_PASSWORD=...
+
+# Optional
+OPENAI_API_KEY=sk-...          # For Graphiti entity extraction
+LIVEGREP_ENDPOINT=http://localhost:8910
 ```
 
 ## Development
@@ -172,16 +203,20 @@ docker-compose -f docker/docker-compose.yaml up -d
 
 # Check status
 docker-compose -f docker/docker-compose.yaml ps
-
-# View logs
-docker-compose -f docker/docker-compose.yaml logs -f
 ```
 
 | Service | Port | Purpose |
 |---------|------|---------|
 | redis | 6379 | Hot memory cache |
-| neo4j | 7687 | Knowledge graph |
+| neo4j | 7687 | Knowledge graph (Graphiti) |
 | litellm | 4000 | Model routing |
+
+## Roadmap
+
+- [ ] Hound integration for project-local search
+- [ ] Semantic search layer (Nomic Embed + LanceDB)
+- [ ] Search MCP server (separate from Memory MCP)
+- [ ] Windows/Linux System Controller
 
 ## License
 
