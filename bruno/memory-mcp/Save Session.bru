@@ -1,0 +1,80 @@
+meta {
+  name: Save Session
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{base_url}}{{mcp_endpoint}}
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "jsonrpc": "2.0",
+    "id": 6,
+    "method": "tools/call",
+    "params": {
+      "name": "session_save",
+      "arguments": {
+        "project_path": "/Users/dev/projects/my-app",
+        "active_files": [
+          "src/main.py",
+          "tests/test_main.py",
+          "README.md"
+        ],
+        "context": {
+          "current_task": "Implementing feature X",
+          "branch": "feature/new-feature",
+          "last_test_result": "passing"
+        }
+      }
+    }
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.result.isError: isUndefined
+  res.body.result.content[0].text: contains "session_id"
+}
+
+docs {
+  # session_save
+
+  Save current session state for later restoration.
+
+  ## Arguments
+
+  | Field | Type | Required | Description |
+  |-------|------|----------|-------------|
+  | project_path | string | Yes | Project directory path |
+  | active_files | array | No | List of currently open/active files |
+  | context | object | No | Arbitrary context data to preserve |
+
+  ## Response
+
+  Returns JSON with:
+  - `session_id`: Unique session identifier
+  - `saved_at`: Timestamp of save
+
+  ## Use Cases
+
+  - Save work before switching projects
+  - Preserve state before destructive operations
+  - End-of-day context capture
+  - Enable seamless continuation across sessions
+
+  ## Best Practices
+
+  Save sessions when:
+  - User indicates they'll continue later
+  - Switching between projects
+  - Before major refactoring
+  - At logical breakpoints in work
+}

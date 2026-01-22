@@ -1,0 +1,62 @@
+meta {
+  name: Recall Memory
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{base_url}}{{mcp_endpoint}}
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "method": "tools/call",
+    "params": {
+      "name": "memory_recall",
+      "arguments": {
+        "id": "abc12345"
+      }
+    }
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+docs {
+  # memory_recall
+
+  Recall a specific memory by its unique ID.
+
+  ## Arguments
+
+  | Field | Type | Required | Description |
+  |-------|------|----------|-------------|
+  | id | string | Yes | The document ID to recall |
+
+  ## Response
+
+  Returns JSON with full memory document:
+  - `id`: Document identifier
+  - `content`: Original stored content
+  - `type`: Document type
+  - `source`: Source identifier
+  - `tags`: Associated tags
+  - `project`: Project name
+  - `timestamp`: Creation time
+
+  ## Use Cases
+
+  - Retrieve a specific memory found via search
+  - Access full content of a referenced document
+  - Verify stored data
+}

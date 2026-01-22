@@ -1,0 +1,43 @@
+meta {
+  name: List By Project
+  type: http
+  seq: 14
+}
+
+post {
+  url: {{base_url}}{{mcp_endpoint}}
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "jsonrpc": "2.0",
+    "id": 14,
+    "method": "tools/call",
+    "params": {
+      "name": "memory_list",
+      "arguments": {
+        "project": "memory-mcp-test",
+        "limit": 50
+      }
+    }
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+docs {
+  # List By Project Test
+
+  Tests filtering memories by project name.
+
+  Useful for getting all memories related to
+  a specific project before diving deeper.
+}

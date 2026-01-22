@@ -1,0 +1,52 @@
+meta {
+  name: Health Check
+  type: http
+  seq: 15
+}
+
+post {
+  url: {{base_url}}{{mcp_endpoint}}
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "jsonrpc": "2.0",
+    "id": 15,
+    "method": "tools/call",
+    "params": {
+      "name": "memory_stats",
+      "arguments": {}
+    }
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.result.content[0].text: contains "health"
+  res.body.result.content[0].text: contains "components"
+}
+
+docs {
+  # Health Check Test
+
+  Verifies all components are healthy and responsive.
+
+  ## Assertions
+
+  - Response contains health section
+  - Response contains components status
+  - HTTP 200 status
+
+  ## Expected Health Statuses
+
+  - **healthy**: Component is working normally
+  - **degraded**: Component is working but with issues
+  - **error**: Component failed
+  - **not_available**: Component not installed/configured
+}

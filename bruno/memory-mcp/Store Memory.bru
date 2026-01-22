@@ -1,0 +1,68 @@
+meta {
+  name: Store Memory
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}{{mcp_endpoint}}
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {
+      "name": "memory_store",
+      "arguments": {
+        "content": "def hello(): print('Hello, World!')",
+        "type": "code",
+        "source": "example.py",
+        "tags": ["python", "function", "example"],
+        "project": "memory-mcp-test"
+      }
+    }
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.result.isError: isUndefined
+  res.body.result.content[0].text: contains "id"
+}
+
+docs {
+  # memory_store
+
+  Store content in the Memory MCP long-term memory system.
+
+  ## Arguments
+
+  | Field | Type | Required | Description |
+  |-------|------|----------|-------------|
+  | content | string | Yes | The content to store |
+  | type | string | Yes | One of: code, note, conversation, reference |
+  | source | string | Yes | Source identifier (e.g., filename) |
+  | tags | array | No | List of tags for categorization |
+  | project | string | No | Project name for organization |
+
+  ## Response
+
+  Returns JSON with:
+  - `id`: Unique identifier for the stored memory
+  - `timestamp`: When the memory was created
+
+  ## Use Cases
+
+  - Store code snippets for later retrieval
+  - Save notes and documentation
+  - Record conversation context
+  - Archive reference materials
+}

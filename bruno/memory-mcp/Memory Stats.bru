@@ -1,0 +1,70 @@
+meta {
+  name: Memory Stats
+  type: http
+  seq: 10
+}
+
+post {
+  url: {{base_url}}{{mcp_endpoint}}
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "jsonrpc": "2.0",
+    "id": 10,
+    "method": "tools/call",
+    "params": {
+      "name": "memory_stats",
+      "arguments": {}
+    }
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.result.isError: isUndefined
+  res.body.result.content[0].text: contains "sqlite_count"
+  res.body.result.content[0].text: contains "components"
+}
+
+docs {
+  # memory_stats
+
+  Get comprehensive statistics and health information about the memory system.
+
+  ## Arguments
+
+  No arguments required.
+
+  ## Response
+
+  Returns JSON with:
+  - `sqlite_count`: Total documents in cold storage
+  - `session_id`: Current server session ID
+  - `components`: Boolean availability of each component
+    - `sqlite`: SQLite cold storage
+    - `vault`: Obsidian vault archive
+    - `redis`: Redis hot cache
+    - `faiss`: FAISS vector search
+    - `embedder`: Embedding provider
+  - `health`: Detailed health status with latency
+    - Each component shows: status, latency_ms, error (if any)
+  - `sqlite`: SQLite-specific stats
+  - `vault`: Vault-specific stats
+  - `redis`: Redis-specific stats (if available)
+  - `faiss`: FAISS-specific stats (if available)
+  - `embedder`: Embedder info (if available)
+
+  ## Use Cases
+
+  - Monitor system health
+  - Debug connection issues
+  - Verify component availability
+  - Performance monitoring
+}

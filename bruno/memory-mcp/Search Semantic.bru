@@ -1,0 +1,44 @@
+meta {
+  name: Search Semantic Only
+  type: http
+  seq: 11
+}
+
+post {
+  url: {{base_url}}{{mcp_endpoint}}
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "jsonrpc": "2.0",
+    "id": 11,
+    "method": "tools/call",
+    "params": {
+      "name": "memory_search",
+      "arguments": {
+        "query": "function that prints greeting",
+        "type": "semantic",
+        "limit": 5
+      }
+    }
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+docs {
+  # Semantic Search Test
+
+  Tests semantic (vector) search only, without text matching.
+
+  This is useful for finding conceptually similar content
+  even when the exact words don't match.
+}

@@ -1,0 +1,64 @@
+meta {
+  name: Delete Memory
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{base_url}}{{mcp_endpoint}}
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "jsonrpc": "2.0",
+    "id": 4,
+    "method": "tools/call",
+    "params": {
+      "name": "memory_delete",
+      "arguments": {
+        "id": "abc12345"
+      }
+    }
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.result.isError: isUndefined
+}
+
+docs {
+  # memory_delete
+
+  Remove outdated or incorrect memories from storage.
+
+  ## Arguments
+
+  | Field | Type | Required | Description |
+  |-------|------|----------|-------------|
+  | id | string | Yes | The document ID to delete |
+
+  ## Response
+
+  Returns JSON with:
+  - `deleted`: Boolean indicating success
+  - `id`: The deleted document ID
+
+  ## Use Cases
+
+  - Remove outdated preferences
+  - Delete superseded decisions
+  - Clean up test data
+  - Correct erroneous entries
+
+  ## Warning
+
+  Deletion is permanent. Consider searching for the memory first to verify
+  it's the correct one before deleting.
+}

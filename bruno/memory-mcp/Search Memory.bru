@@ -1,0 +1,69 @@
+meta {
+  name: Search Memory
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}{{mcp_endpoint}}
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "tools/call",
+    "params": {
+      "name": "memory_search",
+      "arguments": {
+        "query": "hello world function",
+        "type": "hybrid",
+        "limit": 10
+      }
+    }
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.result.isError: isUndefined
+  res.body.result.content[0].text: contains "results"
+}
+
+docs {
+  # memory_search
+
+  Search your persistent memory using text or semantic similarity.
+
+  ## Arguments
+
+  | Field | Type | Required | Description |
+  |-------|------|----------|-------------|
+  | query | string | Yes | Search query text |
+  | type | string | No | Search type: text, semantic, or hybrid (default) |
+  | limit | integer | No | Maximum results to return (default: 10) |
+
+  ## Search Types
+
+  - **text**: Full-text search using SQLite FTS5
+  - **semantic**: Vector similarity search using FAISS
+  - **hybrid**: Combines both methods for best results
+
+  ## Response
+
+  Returns JSON with:
+  - `results`: Array of matching memories with scores
+  - `count`: Total number of results
+
+  ## Use Cases
+
+  - Find previous code implementations
+  - Retrieve past conversations
+  - Search for related notes
+}

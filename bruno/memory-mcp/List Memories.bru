@@ -1,0 +1,62 @@
+meta {
+  name: List Memories
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{base_url}}{{mcp_endpoint}}
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "jsonrpc": "2.0",
+    "id": 5,
+    "method": "tools/call",
+    "params": {
+      "name": "memory_list",
+      "arguments": {
+        "type": "code",
+        "limit": 20,
+        "project": "memory-mcp-test"
+      }
+    }
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.result.isError: isUndefined
+}
+
+docs {
+  # memory_list
+
+  List recent memories with optional filtering.
+
+  ## Arguments
+
+  | Field | Type | Required | Description |
+  |-------|------|----------|-------------|
+  | type | string | No | Filter by type: code, note, conversation, reference |
+  | limit | integer | No | Maximum results (default: 20) |
+  | project | string | No | Filter by project name |
+
+  ## Response
+
+  Returns JSON with:
+  - `items`: Array of memory summaries
+  - `count`: Total count matching filters
+
+  ## Use Cases
+
+  - Get overview of stored memories
+  - Browse recent entries before searching
+  - Check memory inventory by type/project
+}

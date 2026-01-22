@@ -1,0 +1,44 @@
+meta {
+  name: Search Text Only
+  type: http
+  seq: 12
+}
+
+post {
+  url: {{base_url}}{{mcp_endpoint}}
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "jsonrpc": "2.0",
+    "id": 12,
+    "method": "tools/call",
+    "params": {
+      "name": "memory_search",
+      "arguments": {
+        "query": "print",
+        "type": "text",
+        "limit": 20
+      }
+    }
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+docs {
+  # Text Search Test
+
+  Tests full-text search using SQLite FTS5.
+
+  Useful for exact keyword matching when you know
+  the specific terms to search for.
+}

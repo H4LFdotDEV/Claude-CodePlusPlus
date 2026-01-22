@@ -1,0 +1,73 @@
+meta {
+  name: Write to Vault
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{base_url}}{{mcp_endpoint}}
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "jsonrpc": "2.0",
+    "id": 8,
+    "method": "tools/call",
+    "params": {
+      "name": "vault_write",
+      "arguments": {
+        "path": "projects/memory-mcp/api-reference",
+        "content": "# Memory MCP API Reference\n\n## Overview\n\nThe Memory MCP provides persistent memory capabilities...",
+        "folder": "notes",
+        "tags": ["api", "documentation", "reference"]
+      }
+    }
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.result.isError: isUndefined
+}
+
+docs {
+  # vault_write
+
+  Write content to the Obsidian vault for human-readable storage.
+
+  ## Arguments
+
+  | Field | Type | Required | Description |
+  |-------|------|----------|-------------|
+  | path | string | Yes | Note path (without .md extension) |
+  | content | string | Yes | Markdown content to write |
+  | folder | string | No | Target folder: code, notes, conversations, references, daily |
+  | tags | array | No | Tags for the note |
+
+  ## Response
+
+  Returns JSON with:
+  - `path`: Full path of created note
+  - `created`: Boolean (true if new, false if updated)
+
+  ## Use Cases
+
+  - Save documentation for human review
+  - Create reference materials
+  - Export code snippets with context
+  - Generate daily logs
+
+  ## Folder Types
+
+  - **code**: Code snippets and implementations
+  - **notes**: General notes and ideas
+  - **conversations**: Conversation logs
+  - **references**: External references and links
+  - **daily**: Daily notes and logs
+}

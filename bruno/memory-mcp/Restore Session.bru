@@ -1,0 +1,68 @@
+meta {
+  name: Restore Session
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{base_url}}{{mcp_endpoint}}
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "jsonrpc": "2.0",
+    "id": 7,
+    "method": "tools/call",
+    "params": {
+      "name": "session_restore",
+      "arguments": {
+        "session_id": "abc12345-6789-0123-4567-890abcdef012"
+      }
+    }
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+docs {
+  # session_restore
+
+  Restore a previously saved session to resume work.
+
+  ## Arguments
+
+  | Field | Type | Required | Description |
+  |-------|------|----------|-------------|
+  | session_id | string | No | Specific session ID to restore. If omitted, restores most recent. |
+
+  ## Response
+
+  Returns JSON with:
+  - `session_id`: The restored session ID
+  - `project_path`: Project directory
+  - `active_files`: Previously active files
+  - `context`: Preserved context data
+  - `saved_at`: When session was saved
+
+  ## Use Cases
+
+  - Resume work on a project
+  - Restore context after restart
+  - Continue from where you left off
+
+  ## Trigger Patterns
+
+  Call session_restore when:
+  - User says "continuing work on X"
+  - User references a known project
+  - Starting conversation with project context
+  - User asks "where did we leave off"
+}

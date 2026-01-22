@@ -1,0 +1,64 @@
+meta {
+  name: Read from Vault
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{base_url}}{{mcp_endpoint}}
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "jsonrpc": "2.0",
+    "id": 9,
+    "method": "tools/call",
+    "params": {
+      "name": "vault_read",
+      "arguments": {
+        "path": "projects/memory-mcp/api-reference"
+      }
+    }
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+docs {
+  # vault_read
+
+  Read content from a note in the Obsidian vault.
+
+  ## Arguments
+
+  | Field | Type | Required | Description |
+  |-------|------|----------|-------------|
+  | path | string | Yes | Note path (without .md extension) |
+
+  ## Response
+
+  Returns JSON with:
+  - `content`: Full markdown content of the note
+  - `path`: Resolved path
+  - `exists`: Boolean indicating if note was found
+
+  ## Use Cases
+
+  - Retrieve previously saved documentation
+  - Access reference materials
+  - Load code snippets from vault
+  - Review conversation logs
+
+  ## Error Handling
+
+  If the note doesn't exist, returns error with suggestion
+  to check the path or use memory_search to find related content.
+}

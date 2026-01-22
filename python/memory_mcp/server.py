@@ -576,7 +576,16 @@ class MemoryMCPServer:
         }
 
     def _tool_memory_stats(self, args: Dict) -> Dict:
-        """Get system statistics."""
+        """Get system statistics with health checks.
+
+        Returns comprehensive stats including:
+        - sqlite_count: Total documents in cold storage
+        - session_id: Current server session ID
+        - components: Boolean availability of each component
+        - health: Status and latency for each component
+        - Detailed stats for sqlite, vault, redis, faiss, embedder
+        """
+        import time
         logger.debug("Gathering memory statistics")
 
         stats = {
@@ -588,42 +597,93 @@ class MemoryMCPServer:
                 "redis": self.redis is not None,
                 "faiss": self.faiss is not None,
                 "embedder": self.embedder is not None
-            }
+            },
+            "health": {}
         }
 
-        # SQLite stats
+        # SQLite stats with health check
         try:
+            start = time.time()
             sqlite_stats = self.sqlite.get_stats()
+            latency_ms = (time.time() - start) * 1000
             stats["sqlite_count"] = sqlite_stats.get("total_documents", 0)
             stats["sqlite"] = sqlite_stats
+            stats["health"]["sqlite"] = {
+                "status": "healthy",
+                "latency_ms": round(latency_ms, 2)
+            }
         except Exception as e:
             logger.warning(f"Failed to get SQLite stats: {e}")
+            stats["health"]["sqlite"] = {"status": "error", "error": str(e)}
 
-        # Vault stats
+        # Vault stats with health check
         try:
-            stats["vault"] = self.vault.get_stats()
+            start = time.time()
+            vault_stats = self.vault.get_stats()
+            latency_ms = (time.time() - start) * 1000
+            stats["vault"] = vault_stats
+            stats["health"]["vault"] = {
+                "status": "connected",
+                "latency_ms": round(latency_ms, 2)
+            }
         except Exception as e:
             logger.warning(f"Failed to get vault stats: {e}")
+            stats["health"]["vault"] = {"status": "error", "error": str(e)}
 
-        # Redis stats
+        # Redis stats with health check
         if self.redis:
             try:
-                stats["redis"] = self.redis.get_stats()
+                start = time.time()
+                redis_stats = self.redis.get_stats()
+                health_ok = self.redis.health_check()
+                latency_ms = (time.time() - start) * 1000
+                stats["redis"] = redis_stats
+                stats["health"]["redis"] = {
+                    "status": "healthy" if health_ok else "degraded",
+                    "latency_ms": round(latency_ms, 2)
+                }
             except Exception as e:
                 logger.warning(f"Failed to get Redis stats: {e}")
+                stats["health"]["redis"] = {"status": "error", "error": str(e)}
+        else:
+            stats["health"]["redis"] = {"status": "not_available"}
 
-        # FAISS stats
+        # FAISS stats with health check
         if self.faiss:
-            stats["faiss"] = {
-                "total_vectors": self.faiss.count,
-                "dimension": self.faiss.dimension
-            }
+            try:
+                start = time.time()
+                faiss_stats = {
+                    "total_vectors": self.faiss.count,
+                    "dimension": self.faiss.dimension,
+                    "index_type": self.faiss.config.index_type if hasattr(self.faiss, 'config') else "unknown",
+                    "deleted_count": getattr(self.faiss, 'deleted_count', 0),
+                    "total_added": getattr(self.faiss, 'total_added', self.faiss.count)
+                }
+                latency_ms = (time.time() - start) * 1000
+                stats["faiss"] = faiss_stats
+                stats["health"]["faiss"] = {
+                    "status": "available",
+                    "latency_ms": round(latency_ms, 2)
+                }
+            except Exception as e:
+                logger.warning(f"Failed to get FAISS stats: {e}")
+                stats["health"]["faiss"] = {"status": "error", "error": str(e)}
+        else:
+            stats["health"]["faiss"] = {"status": "not_available"}
 
-        # Embedder info
+        # Embedder info with health check
         if self.embedder:
-            stats["embedder"] = {
-                "provider": self.embedder.name
-            }
+            try:
+                stats["embedder"] = {
+                    "provider": self.embedder.name,
+                    "dimension": getattr(self.embedder, 'dimension', None)
+                }
+                stats["health"]["embedder"] = {"status": "active"}
+            except Exception as e:
+                logger.warning(f"Failed to get embedder info: {e}")
+                stats["health"]["embedder"] = {"status": "error", "error": str(e)}
+        else:
+            stats["health"]["embedder"] = {"status": "not_available"}
 
         logger.debug(f"Stats gathered: {stats['sqlite_count']} documents in SQLite")
         return stats

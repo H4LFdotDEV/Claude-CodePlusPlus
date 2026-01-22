@@ -1,0 +1,49 @@
+meta {
+  name: Store Note
+  type: http
+  seq: 13
+}
+
+post {
+  url: {{base_url}}{{mcp_endpoint}}
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "jsonrpc": "2.0",
+    "id": 13,
+    "method": "tools/call",
+    "params": {
+      "name": "memory_store",
+      "arguments": {
+        "content": "User prefers TypeScript over JavaScript. Always use strict mode and explicit types.",
+        "type": "note",
+        "source": "user-preferences",
+        "tags": ["preference", "typescript", "coding-style"],
+        "project": "general"
+      }
+    }
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.result.isError: isUndefined
+}
+
+docs {
+  # Store Note Test
+
+  Tests storing a note-type memory (user preferences).
+
+  Notes are ideal for:
+  - User preferences
+  - Project constraints
+  - Decisions and rationale
+}
