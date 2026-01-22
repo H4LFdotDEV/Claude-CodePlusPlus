@@ -6,7 +6,7 @@ import re
 import logging
 from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
-from pydantic import BaseModel, Field, field_validator, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, field_validator, ValidationError
 
 logger = logging.getLogger("memory_mcp.schemas")
 
@@ -104,8 +104,8 @@ class MemoryItemModel(BaseModel):
     def check_created_at(cls, v: str) -> str:
         return validate_iso_timestamp(v)
 
-    class Config:
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
+
 
 class EmbeddingCacheModel(BaseModel):
     """Validated embedding cache from Redis."""
@@ -131,8 +131,8 @@ class EmbeddingCacheModel(BaseModel):
     def check_created_at(cls, v: str) -> str:
         return validate_iso_timestamp(v)
 
-    class Config:
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
+
 
 class ContextWindowModel(BaseModel):
     """Validated context window from Redis."""
@@ -167,8 +167,8 @@ class ContextWindowModel(BaseModel):
     def check_created_at(cls, v: str) -> str:
         return validate_iso_timestamp(v)
 
-    class Config:
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
+
 
 class ToolCallModel(BaseModel):
     """Validated tool call from Redis."""
@@ -204,8 +204,8 @@ class ToolCallModel(BaseModel):
     def check_timestamp(cls, v: str) -> str:
         return validate_iso_timestamp(v)
 
-    class Config:
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
+
 
 # Validation Helpers
 def validate_redis_data(data: Dict[str, Any], model_class) -> Any:
@@ -266,8 +266,7 @@ class ContextWindowMessageModel(BaseModel):
     def check_timestamp(cls, v: str) -> str:
         return validate_iso_timestamp(v)
 
-    class Config:
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
 
 
 class TemplateCacheModel(BaseModel):
@@ -288,8 +287,7 @@ class TemplateCacheModel(BaseModel):
     def check_cached_at(cls, v: str) -> str:
         return validate_iso_timestamp(v)
 
-    class Config:
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
 
 
 class QueryCacheModel(BaseModel):
@@ -318,8 +316,7 @@ class QueryCacheModel(BaseModel):
     def check_created_at(cls, v: str) -> str:
         return validate_iso_timestamp(v)
 
-    class Config:
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
 
 
 # Update SessionStateModel to use ContextWindowMessageModel
@@ -367,8 +364,7 @@ class SessionStateModel(BaseModel):
     def check_timestamps(cls, v: str) -> str:
         return validate_iso_timestamp(v)
 
-    class Config:
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
 
 
 # Helper functions for redis_client integration

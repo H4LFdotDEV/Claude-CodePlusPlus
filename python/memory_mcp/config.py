@@ -8,6 +8,61 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Optional
 import yaml
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Allowed configuration directories (security boundary)
+_ALLOWED_CONFIG_DIRS = [
+    os.path.expanduser("~/.claude-code-pp"),
+    os.path.expanduser("~/.config/claude-code-pp"),
+    "/etc/claude-code-pp",
+]
+
+
+def _validate_config_path(path: str) -> str:
+    """
+    Validate configuration file path to prevent path traversal attacks.
+
+    SECURITY: Only allows loading config from designated config directories,
+    the current working directory, or system temp directories (for testing).
+
+    Args:
+        path: Path to validate
+
+    Returns:
+        Resolved absolute path
+
+    Raises:
+        ValueError: If path is outside allowed directories or invalid
+    """
+    import tempfile
+
+    # Expand and resolve the path
+    resolved = os.path.realpath(os.path.expanduser(path))
+
+    # Check if path is within allowed directories
+    for allowed_dir in _ALLOWED_CONFIG_DIRS:
+        allowed_resolved = os.path.realpath(allowed_dir)
+        if resolved.startswith(allowed_resolved + os.sep) or resolved == allowed_resolved:
+            return resolved
+
+    # Allow paths within the current working directory for development
+    cwd = os.path.realpath(os.getcwd())
+    if resolved.startswith(cwd + os.sep):
+        return resolved
+
+    # Allow paths within system temp directory (for testing)
+    # SECURITY: This is acceptable because temp files are user-controlled
+    # and the user is explicitly requesting to load them
+    temp_dir = os.path.realpath(tempfile.gettempdir())
+    if resolved.startswith(temp_dir + os.sep):
+        return resolved
+
+    raise ValueError(
+        f"Config path '{path}' is outside allowed directories. "
+        f"Allowed: {_ALLOWED_CONFIG_DIRS}"
+    )
 
 
 @dataclass
@@ -53,12 +108,34 @@ class EmbeddingConfig:
 
 
 @dataclass
+class GraphitiConfig:
+    """Configuration for Graphiti/Neo4j knowledge graph (warm tier)."""
+    uri: str = "bolt://localhost:7687"
+    user: str = "neo4j"
+    password: Optional[str] = None  # From NEO4J_PASSWORD env var
+    openai_api_key: Optional[str] = None  # For entity extraction
+    enabled: bool = True  # Set to False to disable Graphiti
+
+
+@dataclass
+class LivegrepConfig:
+    """Configuration for livegrep code search (cold tier)."""
+    endpoint: str = "http://localhost:8910"
+    backend_port: int = 9999  # gRPC port for codesearch
+    index_path: str = "~/.claude-code-pp/livegrep/index.idx"
+    repos_path: str = "~/.claude-code-pp/livegrep/repos"
+    enabled: bool = True  # Set to False to disable livegrep
+
+
+@dataclass
 class MemoryConfig:
     redis: RedisConfig = field(default_factory=RedisConfig)
     faiss: FAISSConfig = field(default_factory=FAISSConfig)
     sqlite: SQLiteConfig = field(default_factory=SQLiteConfig)
     vault: VaultConfig = field(default_factory=VaultConfig)
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
+    graphiti: GraphitiConfig = field(default_factory=GraphitiConfig)
+    livegrep: LivegrepConfig = field(default_factory=LivegrepConfig)
 
     # Paths
     base_path: str = "~/.claude-code-pp"
@@ -66,12 +143,21 @@ class MemoryConfig:
 
     @classmethod
     def from_yaml(cls, path: str) -> "MemoryConfig":
-        """Load configuration from YAML file."""
-        path = os.path.expanduser(path)
-        if not os.path.exists(path):
+        """
+        Load configuration from YAML file.
+
+        SECURITY: Validates path to prevent traversal attacks.
+        """
+        try:
+            validated_path = _validate_config_path(path)
+        except ValueError as e:
+            logger.warning(f"Config path validation failed: {e}. Using defaults.")
             return cls()
 
-        with open(path) as f:
+        if not os.path.exists(validated_path):
+            return cls()
+
+        with open(validated_path) as f:
             data = yaml.safe_load(f) or {}
 
         config = cls()
@@ -95,6 +181,9 @@ class MemoryConfig:
         faiss_data = memory.get("faiss", {})
         config.faiss = FAISSConfig(
             index_type=faiss_data.get("index_type", "flat"),
+            dimension=faiss_data.get("dimension", 768),
+            nlist=faiss_data.get("nlist", 100),
+            nprobe=faiss_data.get("nprobe", 10),
             rebuild_threshold=faiss_data.get("rebuild_threshold", 0.1),
         )
 
@@ -113,6 +202,26 @@ class MemoryConfig:
             config.embedding.local_model = providers["local"].get("model", config.embedding.local_model)
             config.embedding.local_endpoint = providers["local"].get("endpoint", config.embedding.local_endpoint)
 
+        # Graphiti config (knowledge graph - warm tier)
+        graphiti_data = memory.get("graphiti", {})
+        config.graphiti = GraphitiConfig(
+            uri=graphiti_data.get("uri", os.environ.get("NEO4J_URI", "bolt://localhost:7687")),
+            user=graphiti_data.get("user", os.environ.get("NEO4J_USER", "neo4j")),
+            password=graphiti_data.get("password", os.environ.get("NEO4J_PASSWORD")),
+            openai_api_key=graphiti_data.get("openai_api_key", os.environ.get("OPENAI_API_KEY")),
+            enabled=graphiti_data.get("enabled", True),
+        )
+
+        # livegrep config (code search - cold tier)
+        livegrep_data = memory.get("livegrep", {})
+        config.livegrep = LivegrepConfig(
+            endpoint=livegrep_data.get("endpoint", os.environ.get("LIVEGREP_ENDPOINT", "http://localhost:8910")),
+            backend_port=livegrep_data.get("backend_port", 9999),
+            index_path=livegrep_data.get("index_path", "~/.claude-code-pp/livegrep/index.idx"),
+            repos_path=livegrep_data.get("repos_path", "~/.claude-code-pp/livegrep/repos"),
+            enabled=livegrep_data.get("enabled", True),
+        )
+
         return config
 
     def expand_paths(self):
@@ -121,6 +230,8 @@ class MemoryConfig:
         self.faiss_path = os.path.expanduser(self.faiss_path)
         self.sqlite.path = os.path.expanduser(self.sqlite.path)
         self.vault.path = os.path.expanduser(self.vault.path)
+        self.livegrep.index_path = os.path.expanduser(self.livegrep.index_path)
+        self.livegrep.repos_path = os.path.expanduser(self.livegrep.repos_path)
 
     def ensure_directories(self):
         """Create necessary directories."""
@@ -129,6 +240,8 @@ class MemoryConfig:
         Path(self.faiss_path).mkdir(parents=True, exist_ok=True)
         Path(self.vault.path).mkdir(parents=True, exist_ok=True)
         Path(self.sqlite.path).parent.mkdir(parents=True, exist_ok=True)
+        Path(self.livegrep.index_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(self.livegrep.repos_path).mkdir(parents=True, exist_ok=True)
 
 
 # Global config instance with thread-safe initialization

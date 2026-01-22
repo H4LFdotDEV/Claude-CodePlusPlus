@@ -70,6 +70,10 @@ class SQLiteIndex:
 
     SCHEMA_VERSION = 1
 
+    # LIKE special characters that need escaping
+    _LIKE_ESCAPE_CHAR = '\\'
+    _LIKE_SPECIAL_CHARS = {'%': '\\%', '_': '\\_', '\\': '\\\\'}
+
     def __init__(self, config: Optional[SQLiteConfig] = None, path: Optional[str] = None):
         self.config = config or get_config().sqlite
         self.path = path or self.config.path
@@ -79,6 +83,25 @@ class SQLiteIndex:
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
 
         self._init_database()
+
+    def _escape_like_pattern(self, value: str) -> str:
+        """
+        Escape LIKE pattern special characters to prevent injection.
+
+        SQL LIKE patterns treat % as wildcard (any chars) and _ as wildcard
+        (single char). User input containing these could bypass filtering.
+
+        Args:
+            value: User-provided search value
+
+        Returns:
+            Escaped value safe for LIKE pattern
+        """
+        if not value:
+            return value
+        for char, escaped in self._LIKE_SPECIAL_CHARS.items():
+            value = value.replace(char, escaped)
+        return value
 
     @contextmanager
     def _get_connection(self):
@@ -322,28 +345,40 @@ class SQLiteIndex:
             return [MemoryDocument.from_row(row) for row in cursor.fetchall()]
 
     def search_by_tag(self, tag: str, limit: int = 100) -> List[MemoryDocument]:
-        """Get documents containing a specific tag."""
+        """
+        Get documents containing a specific tag.
+
+        SECURITY: Escapes LIKE special characters to prevent pattern injection.
+        """
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            # JSON array contains check
+            # Escape LIKE special characters in tag
+            safe_tag = self._escape_like_pattern(tag)
+            # JSON array contains check with ESCAPE clause
             cursor.execute("""
                 SELECT * FROM documents
-                WHERE tags LIKE ?
+                WHERE tags LIKE ? ESCAPE '\\'
                 ORDER BY updated_at DESC
                 LIMIT ?
-            """, (f'%"{tag}"%', limit))
+            """, (f'%"{safe_tag}"%', limit))
             return [MemoryDocument.from_row(row) for row in cursor.fetchall()]
 
     def search_by_source(self, source_pattern: str, limit: int = 100) -> List[MemoryDocument]:
-        """Get documents matching source pattern."""
+        """
+        Get documents matching source pattern.
+
+        SECURITY: Escapes LIKE special characters to prevent pattern injection.
+        """
         with self._get_connection() as conn:
             cursor = conn.cursor()
+            # Escape LIKE special characters in source pattern
+            safe_pattern = self._escape_like_pattern(source_pattern)
             cursor.execute("""
                 SELECT * FROM documents
-                WHERE source LIKE ?
+                WHERE source LIKE ? ESCAPE '\\'
                 ORDER BY updated_at DESC
                 LIMIT ?
-            """, (f"%{source_pattern}%", limit))
+            """, (f"%{safe_pattern}%", limit))
             return [MemoryDocument.from_row(row) for row in cursor.fetchall()]
 
     def get_recent(self, limit: int = 20) -> List[MemoryDocument]:

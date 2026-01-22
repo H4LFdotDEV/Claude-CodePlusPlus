@@ -2,11 +2,114 @@
 # Jeremiah Kroesche | Halfservers LLC
 #
 # This provides the containerized infrastructure for Claude Code++
-
-version: "3.8"
+# Enterprise-grade deployment with resource limits, health checks, and logging
 
 services:
-  # Vector store for memory (warm layer)
+  # Knowledge graph for memory (warm layer) - Graphiti/Neo4j
+  neo4j:
+    image: neo4j:5.26-community
+    container_name: claude-code-pp-neo4j
+    ports:
+      - "127.0.0.1:7474:7474"  # HTTP browser
+      - "127.0.0.1:7687:7687"  # Bolt protocol
+    volumes:
+      - neo4j-data:/data
+      - neo4j-logs:/logs
+    environment:
+      # Auth format: username/password
+      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD:?NEO4J_PASSWORD required}
+      # APOC plugin for advanced procedures
+      - NEO4J_PLUGINS=["apoc"]
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+      - NEO4J_dbms_security_procedures_allowlist=apoc.*
+      # Memory configuration
+      - NEO4J_server_memory_heap_initial__size=512m
+      - NEO4J_server_memory_heap_max__size=1G
+      - NEO4J_server_memory_pagecache_size=256m
+      # Performance tuning
+      - NEO4J_server_threads_worker__count=4
+      - NEO4J_db_transaction_timeout=60s
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  # Code search engine (cold layer) - livegrep backend
+  livegrep-backend:
+    image: ghcr.io/livegrep/livegrep:latest
+    container_name: claude-code-pp-livegrep-backend
+    command: codesearch -load_index /data/index.idx -grpc 0.0.0.0:9999
+    ports:
+      - "127.0.0.1:9999:9999"
+    volumes:
+      - livegrep-data:/data
+    profiles:
+      - livegrep
+    restart: unless-stopped
+    healthcheck:
+      # gRPC health check - attempt connection to the backend
+      test: ["CMD-SHELL", "nc -z localhost 9999 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Code search frontend (cold layer) - livegrep web
+  livegrep-frontend:
+    image: ghcr.io/livegrep/livegrep:latest
+    container_name: claude-code-pp-livegrep-frontend
+    command: livegrep -listen 0.0.0.0:8910 -backends livegrep-backend:9999
+    ports:
+      - "127.0.0.1:8910:8910"
+    depends_on:
+      livegrep-backend:
+        condition: service_healthy
+    profiles:
+      - livegrep
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8910/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Vector store for memory (warm layer) - Legacy, use neo4j instead
   chromadb:
     image: chromadb/chroma:0.4.22
     container_name: claude-code-pp-chroma
@@ -17,6 +120,8 @@ services:
     environment:
       - IS_PERSISTENT=TRUE
       - ANONYMIZED_TELEMETRY=FALSE
+    profiles:
+      - legacy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
@@ -32,13 +137,24 @@ services:
       - "127.0.0.1:6379:6379"
     volumes:
       - redis-data:/data
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD required}
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD required}
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # LiteLLM proxy for model routing and cost optimization
   litellm:
@@ -50,6 +166,10 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY required}
+      # Redis for caching (uses internal network)
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
     volumes:
       - ../config/litellm.yaml:/app/config.yaml:ro
     command: --config /app/config.yaml --detailed_debug
@@ -62,6 +182,18 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
 
   # Browser automation (optional)
   playwright:
@@ -118,6 +250,12 @@ services:
     restart: "no"
 
 volumes:
+  neo4j-data:
+    name: claude-code-pp-neo4j-data
+  neo4j-logs:
+    name: claude-code-pp-neo4j-logs
+  livegrep-data:
+    name: claude-code-pp-livegrep-data
   chroma-data:
     name: claude-code-pp-chroma-data
   redis-data:
@@ -132,9 +270,12 @@ networks:
     name: claude-code-pp-network
 
 # Usage:
-# 
-# Start core services:
+#
+# Start core services (Redis + Neo4j + LiteLLM):
 #   docker-compose up -d
+#
+# Start with code search (livegrep):
+#   docker-compose --profile livegrep up -d
 #
 # Start with browser automation:
 #   docker-compose --profile browser up -d
@@ -143,13 +284,22 @@ networks:
 #   docker-compose --profile local-llm up -d
 #
 # Start everything:
-#   docker-compose --profile browser --profile local-llm --profile testing --profile cicd up -d
+#   docker-compose --profile livegrep --profile browser --profile local-llm --profile testing --profile cicd up -d
 #
 # Stop all:
 #   docker-compose down
 #
 # View logs:
 #   docker-compose logs -f
+#
+# Access Neo4j Browser:
+#   http://localhost:7474 (user: neo4j, password: $NEO4J_PASSWORD)
+#
+# Access livegrep search:
+#   http://localhost:8910
+#
+# Index code for livegrep (requires indexing first):
+#   docker exec claude-code-pp-livegrep-backend codesearch -index_only -dump_index /data/index.idx /data/config.json
 #
 # Pull Ollama models (after starting ollama service):
 #   docker exec claude-code-pp-ollama ollama pull nomic-embed-text

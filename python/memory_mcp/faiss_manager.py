@@ -233,12 +233,61 @@ class FAISSManager:
         if self.total_added == 0:
             return False
         deletion_ratio = self.deleted_count / self.total_added
-        return deletion_ratio > 0.3  # 30% threshold
+        return deletion_ratio > self.config.rebuild_threshold
 
     def maybe_rebuild(self) -> None:
-        """Rebuild index if needed, with progress logging."""
+        """Auto-compact index if deletion threshold exceeded."""
         if self.needs_rebuild():
-            logger.info(f"Rebuilding FAISS index: {self.deleted_count}/{self.total_added} deleted")
+            logger.info(
+                f"Auto-compacting FAISS index: {self.deleted_count}/{self.total_added} "
+                f"deleted ({self.deleted_count/self.total_added*100:.1f}% > "
+                f"{self.config.rebuild_threshold*100:.0f}% threshold)"
+            )
+            self._auto_compact()
+
+    def _auto_compact(self) -> None:
+        """Compact index by rebuilding from stored embeddings."""
+        # Collect all active (non-deleted) embeddings
+        active_docs = []
+        for faiss_id, doc_id in self.id_map.items():
+            if faiss_id not in self.deleted:
+                embedding = np.zeros((self.dimension,), dtype=np.float32)
+                self.index.reconstruct(faiss_id, embedding)
+                active_docs.append((doc_id, embedding))
+
+        if not active_docs:
+            # Nothing to compact, just reset
+            self.index = self._create_index()
+            self.id_map = {}
+            self.reverse_map = {}
+            self.deleted = set()
+            self.total_added = 0
+            self.deleted_count = 0
+            self.save()
+            return
+
+        # Create new index
+        new_index = self._create_index()
+        new_id_map = {}
+        new_reverse_map = {}
+
+        # Add all active embeddings
+        for doc_id, embedding in active_docs:
+            faiss_id = new_index.ntotal
+            new_index.add(embedding.reshape(1, -1))
+            new_id_map[faiss_id] = doc_id
+            new_reverse_map[doc_id] = faiss_id
+
+        # Swap to new index
+        self.index = new_index
+        self.id_map = new_id_map
+        self.reverse_map = new_reverse_map
+        self.deleted = set()
+        self.total_added = len(new_id_map)
+        self.deleted_count = 0
+
+        logger.info(f"FAISS index compacted: {len(new_id_map)} active documents")
+        self.save()
 
     def rebuild(self, embeddings_loader):
         """

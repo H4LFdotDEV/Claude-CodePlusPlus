@@ -86,8 +86,9 @@ class TestRedisClientWithMock:
         assert result is True
 
     def test_list_sessions(self, redis_client, mock_redis):
-        """Test listing sessions."""
-        mock_redis.keys.return_value = ["cc:session:sess1", "cc:session:sess2"]
+        """Test listing sessions using SCAN."""
+        # SCAN returns (cursor, keys) - cursor=0 means complete
+        mock_redis.scan.return_value = (0, ["cc:session:sess1", "cc:session:sess2"])
         sessions = redis_client.list_sessions()
         assert len(sessions) == 2
         assert "sess1" in sessions
@@ -118,8 +119,9 @@ class TestRedisClientWithMock:
         assert result == "Template content"
 
     def test_list_templates(self, redis_client, mock_redis):
-        """Test listing templates."""
-        mock_redis.keys.return_value = ["cc:template:t1", "cc:template:t2"]
+        """Test listing templates using SCAN."""
+        # SCAN returns (cursor, keys) - cursor=0 means complete
+        mock_redis.scan.return_value = (0, ["cc:template:t1", "cc:template:t2"])
         templates = redis_client.list_templates()
         assert len(templates) == 2
 

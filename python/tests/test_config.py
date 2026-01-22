@@ -487,8 +487,9 @@ memory:
                 config = MemoryConfig.from_yaml(f.name)
                 assert config.redis.port == 6380
                 assert config.redis.db == 2
-                # Note: nlist and nprobe are not parsed, only shown values are
-                assert config.faiss.nlist == 100  # defaults unchanged
+                # FAISS nlist and nprobe are now parsed correctly
+                assert config.faiss.nlist == 200
+                assert config.faiss.nprobe == 20
             finally:
                 os.unlink(f.name)
 

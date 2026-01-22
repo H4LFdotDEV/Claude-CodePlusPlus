@@ -327,8 +327,8 @@ class MemoryMCPServer:
                                     "score": fr.score,
                                     "match_type": "semantic"
                                 })
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Semantic search failed (falling back to text): {e}")
 
         # Sort by score and limit
         results.sort(key=lambda x: x["score"], reverse=True)

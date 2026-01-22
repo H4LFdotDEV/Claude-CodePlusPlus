@@ -8,15 +8,19 @@
 import json
 import hashlib
 import logging
-from typing import Optional, Dict, Any, List
+import threading
+import time
+from typing import Optional, Dict, Any, List, Iterator
 from datetime import datetime, timezone
 
 try:
     import redis
+    from redis.exceptions import ConnectionError as RedisConnectionError
     REDIS_AVAILABLE = True
 except ImportError:
     REDIS_AVAILABLE = False
     redis = None
+    RedisConnectionError = ConnectionError  # Fallback for type hints
 
 from pydantic import ValidationError
 
@@ -115,7 +119,7 @@ class CachedQuery:
 
 
 class RedisClient:
-    """Redis client for hot memory layer."""
+    """Redis client for hot memory layer with connection retry and thread safety."""
 
     # Key prefixes
     PREFIX_SESSION = "cc:session:"
@@ -124,6 +128,10 @@ class RedisClient:
     PREFIX_EMBEDDING = "cc:embed:"
     PREFIX_CONTEXT = "cc:context:"
 
+    # Connection retry settings
+    MAX_RETRIES = 3
+    RETRY_DELAY_BASE = 0.5  # Exponential backoff base (seconds)
+
     def __init__(self, config: Optional[RedisConfig] = None):
         if not REDIS_AVAILABLE:
             raise ImportError("redis is not installed. Run: pip install redis")
@@ -131,33 +139,62 @@ class RedisClient:
         self.config = config or get_config().redis
         self._client: Optional[redis.Redis] = None
         self._connected = False
+        self._lock = threading.Lock()  # Thread safety for connection state
 
-    def connect(self) -> bool:
-        """Connect to Redis server."""
-        try:
-            self._client = redis.Redis(
-                host=self.config.host,
-                port=self.config.port,
-                db=self.config.db,
-                password=self.config.password,
-                decode_responses=True,
-                socket_timeout=5,
-                socket_connect_timeout=5
-            )
-            # Test connection
-            self._client.ping()
-            self._connected = True
-            return True
-        except redis.ConnectionError:
-            self._connected = False
+    def connect(self, retries: int = None) -> bool:
+        """
+        Connect to Redis server with retry logic.
+
+        Args:
+            retries: Number of retry attempts (default: MAX_RETRIES)
+
+        Returns:
+            True if connected successfully, False otherwise
+        """
+        if retries is None:
+            retries = self.MAX_RETRIES
+
+        with self._lock:
+            for attempt in range(retries + 1):
+                try:
+                    self._client = redis.Redis(
+                        host=self.config.host,
+                        port=self.config.port,
+                        db=self.config.db,
+                        password=self.config.password,
+                        decode_responses=True,
+                        socket_timeout=5,
+                        socket_connect_timeout=5,
+                        retry_on_timeout=True,
+                        health_check_interval=30,  # Auto-reconnect
+                    )
+                    # Test connection
+                    self._client.ping()
+                    self._connected = True
+                    if attempt > 0:
+                        logger.info(f"Redis connected after {attempt + 1} attempts")
+                    return True
+                except (redis.ConnectionError, RedisConnectionError) as e:
+                    self._connected = False
+                    if attempt < retries:
+                        delay = self.RETRY_DELAY_BASE * (2 ** attempt)
+                        logger.warning(f"Redis connection attempt {attempt + 1} failed: {e}. Retrying in {delay:.1f}s...")
+                        time.sleep(delay)
+                    else:
+                        logger.error(f"Redis connection failed after {retries + 1} attempts: {e}")
             return False
 
     def disconnect(self):
-        """Disconnect from Redis."""
-        if self._client:
-            self._client.close()
-            self._client = None
-            self._connected = False
+        """Disconnect from Redis (thread-safe)."""
+        with self._lock:
+            if self._client:
+                try:
+                    self._client.close()
+                except Exception as e:
+                    logger.debug(f"Error closing Redis connection: {e}")
+                finally:
+                    self._client = None
+                    self._connected = False
 
     @property
     def is_connected(self) -> bool:
@@ -260,12 +297,26 @@ class RedisClient:
         key = f"{self.PREFIX_SESSION}{session_id}"
         return self._client.delete(key) > 0
 
+    def _scan_keys(self, pattern: str) -> Iterator[str]:
+        """
+        Iterate over keys matching pattern using SCAN (non-blocking).
+
+        SCAN is O(1) per call and doesn't block Redis, unlike KEYS which is O(N)
+        and blocks the entire server. Essential for production use.
+        """
+        cursor = 0
+        while True:
+            cursor, keys = self._client.scan(cursor=cursor, match=pattern, count=100)
+            for key in keys:
+                yield key
+            if cursor == 0:
+                break
+
     def list_sessions(self) -> List[str]:
-        """List all active session IDs."""
+        """List all active session IDs using non-blocking SCAN."""
         self._ensure_connected()
         pattern = f"{self.PREFIX_SESSION}*"
-        keys = self._client.keys(pattern)
-        return [k.replace(self.PREFIX_SESSION, "") for k in keys]
+        return [k.replace(self.PREFIX_SESSION, "") for k in self._scan_keys(pattern)]
 
     # Template Caching
 
@@ -349,11 +400,10 @@ class RedisClient:
             return None
 
     def list_templates(self) -> List[str]:
-        """List all cached template names."""
+        """List all cached template names using non-blocking SCAN."""
         self._ensure_connected()
         pattern = f"{self.PREFIX_TEMPLATE}*"
-        keys = self._client.keys(pattern)
-        return [k.replace(self.PREFIX_TEMPLATE, "") for k in keys]
+        return [k.replace(self.PREFIX_TEMPLATE, "") for k in self._scan_keys(pattern)]
 
     # Query Caching
 
@@ -461,20 +511,46 @@ class RedisClient:
 
     # Embedding Cache
 
-    def cache_embedding(self, text: str, embedding: List[float], ttl: Optional[int] = None) -> bool:
-        """Cache an embedding."""
+    def cache_embedding(
+        self,
+        text: str,
+        embedding: List[float],
+        model: str = "unknown",
+        ttl: Optional[int] = None
+    ) -> bool:
+        """
+        Cache an embedding vector.
+
+        Args:
+            text: The text that was embedded (used as cache key)
+            embedding: The embedding vector
+            model: Model name used for embedding
+            ttl: TTL in seconds (default: 3600)
+
+        Returns:
+            True if cached successfully, False otherwise
+        """
         self._ensure_connected()
         text_hash = hashlib.sha256(text.encode()).hexdigest()[:16]
         key = f"{self.PREFIX_EMBEDDING}{text_hash}"
+
+        # Store full model structure to match EmbeddingCacheModel schema
+        data = {
+            "query": text,
+            "embedding": embedding,
+            "model": model,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
 
         try:
             self._client.setex(
                 key,
                 ttl or 3600,  # Default 1 hour
-                json.dumps(embedding)
+                json.dumps(data)
             )
             return True
-        except redis.RedisError:
+        except redis.RedisError as e:
+            logger.error(f"Failed to cache embedding: {e}")
             return False
 
     def get_cached_embedding(self, text: str) -> Optional[List[float]]:

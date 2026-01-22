@@ -131,6 +131,8 @@ def mock_redis():
     mock.setex.return_value = True
     mock.delete.return_value = 1
     mock.keys.return_value = []
+    # SCAN returns (cursor, keys) - cursor=0 means scan complete
+    mock.scan.return_value = (0, [])
     mock.lpush.return_value = 1
     mock.lrange.return_value = []
     mock.info.return_value = {

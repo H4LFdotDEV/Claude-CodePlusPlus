@@ -1,2 +1,46 @@
 .DS_Store
 
+# Swift
+swift-system-controller/.build
+swift-system-controller/.swiftpm
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+python/=0.21
+
+# Docker
+docker/.env
+
+# Local config overrides
+config/*.local.yaml
+
+# Logs
+*.log
+
+# Documentation - exclude all except essential
+*.md
+!README.md
+!LICENSE.md
+!CHANGELOG.md
+!SECURITY.md
+!CONTRIBUTING.md
+!CODE_OF_CONDUCT.md
+# Keep plugin/subproject READMEs
+!plugins/**/README.md
+!python/README.md
+
+# Archive and working files
+Archive/
+Archive.zip
+*.checkpoint
+*.bak
+
+# Claude Code local config (personal workflow)
+.claude/agents/
+.claude/commands/
+.claude/rules/
+.claude/skills/
+.claude/hooks.json

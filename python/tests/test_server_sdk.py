@@ -28,24 +28,30 @@ class TestComponentInitialization:
     """Test component initialization and lazy loading."""
 
     def test_get_components_returns_all_four(self):
-        """Test get_components returns index, vault, redis, faiss."""
+        """Test get_components returns index, vault, redis, faiss, graphiti, livegrep."""
         # Reset global state
         import memory_mcp.server_sdk as sdk_module
         sdk_module._index = None
         sdk_module._vault = None
         sdk_module._redis = None
         sdk_module._faiss = None
+        sdk_module._graphiti = None
+        sdk_module._livegrep = None
 
         with patch('memory_mcp.server_sdk.SQLiteIndex'):
             with patch('memory_mcp.server_sdk.VaultManager'):
                 with patch('memory_mcp.server_sdk.REDIS_AVAILABLE', False):
                     with patch('memory_mcp.server_sdk.FAISS_AVAILABLE', False):
-                        index, vault, redis, faiss = get_components()
+                        with patch('memory_mcp.server_sdk.GRAPHITI_AVAILABLE', False):
+                            with patch('memory_mcp.server_sdk.LIVEGREP_AVAILABLE', False):
+                                index, vault, redis, faiss, graphiti, livegrep = get_components()
 
-                        assert index is not None
-                        assert vault is not None
-                        assert redis is None
-                        assert faiss is None
+                                assert index is not None
+                                assert vault is not None
+                                assert redis is None
+                                assert faiss is None
+                                assert graphiti is None
+                                assert livegrep is None
 
     def test_get_components_lazy_loading(self):
         """Test get_components initializes only once."""
@@ -54,21 +60,25 @@ class TestComponentInitialization:
         sdk_module._vault = None
         sdk_module._redis = None
         sdk_module._faiss = None
+        sdk_module._graphiti = None
+        sdk_module._livegrep = None
 
         with patch('memory_mcp.server_sdk.SQLiteIndex') as mock_index:
             with patch('memory_mcp.server_sdk.VaultManager') as mock_vault:
                 with patch('memory_mcp.server_sdk.REDIS_AVAILABLE', False):
                     with patch('memory_mcp.server_sdk.FAISS_AVAILABLE', False):
-                        # First call
-                        get_components()
-                        first_index_calls = mock_index.call_count
+                        with patch('memory_mcp.server_sdk.GRAPHITI_AVAILABLE', False):
+                            with patch('memory_mcp.server_sdk.LIVEGREP_AVAILABLE', False):
+                                # First call
+                                get_components()
+                                first_index_calls = mock_index.call_count
 
-                        # Second call
-                        get_components()
-                        second_index_calls = mock_index.call_count
+                                # Second call
+                                get_components()
+                                second_index_calls = mock_index.call_count
 
-                        # Should not reinitialize
-                        assert first_index_calls == second_index_calls
+                                # Should not reinitialize
+                                assert first_index_calls == second_index_calls
 
     def test_get_components_with_redis_available(self):
         """Test get_components initializes Redis when available."""
@@ -77,16 +87,20 @@ class TestComponentInitialization:
         sdk_module._vault = None
         sdk_module._redis = None
         sdk_module._faiss = None
+        sdk_module._graphiti = None
+        sdk_module._livegrep = None
 
         with patch('memory_mcp.server_sdk.SQLiteIndex'):
             with patch('memory_mcp.server_sdk.VaultManager'):
                 with patch('memory_mcp.server_sdk.REDIS_AVAILABLE', True):
                     with patch('memory_mcp.server_sdk.RedisClient') as mock_redis:
                         with patch('memory_mcp.server_sdk.FAISS_AVAILABLE', False):
-                            index, vault, redis, faiss = get_components()
+                            with patch('memory_mcp.server_sdk.GRAPHITI_AVAILABLE', False):
+                                with patch('memory_mcp.server_sdk.LIVEGREP_AVAILABLE', False):
+                                    index, vault, redis, faiss, graphiti, livegrep = get_components()
 
-                            assert redis is not None
-                            mock_redis.assert_called_once()
+                                    assert redis is not None
+                                    mock_redis.assert_called_once()
 
     def test_get_components_with_faiss_available(self):
         """Test get_components initializes FAISS when available."""
@@ -95,6 +109,8 @@ class TestComponentInitialization:
         sdk_module._vault = None
         sdk_module._redis = None
         sdk_module._faiss = None
+        sdk_module._graphiti = None
+        sdk_module._livegrep = None
 
         with patch('memory_mcp.server_sdk.SQLiteIndex'):
             with patch('memory_mcp.server_sdk.VaultManager'):
@@ -103,10 +119,12 @@ class TestComponentInitialization:
                         mock_faiss = MagicMock()
                         mock_faiss.index.ntotal = 1000
                         with patch('memory_mcp.server_sdk.FAISSManager', return_value=mock_faiss):
-                            index, vault, redis, faiss = get_components()
+                            with patch('memory_mcp.server_sdk.GRAPHITI_AVAILABLE', False):
+                                with patch('memory_mcp.server_sdk.LIVEGREP_AVAILABLE', False):
+                                    index, vault, redis, faiss, graphiti, livegrep = get_components()
 
-                            assert faiss is not None
-                            assert faiss.index.ntotal == 1000
+                                    assert faiss is not None
+                                    assert faiss.index.ntotal == 1000
 
     def test_get_components_with_all_available(self):
         """Test get_components with all components available."""
@@ -115,6 +133,8 @@ class TestComponentInitialization:
         sdk_module._vault = None
         sdk_module._redis = None
         sdk_module._faiss = None
+        sdk_module._graphiti = None
+        sdk_module._livegrep = None
 
         with patch('memory_mcp.server_sdk.SQLiteIndex'):
             with patch('memory_mcp.server_sdk.VaultManager'):
@@ -124,12 +144,14 @@ class TestComponentInitialization:
                             mock_faiss = MagicMock()
                             mock_faiss.index.ntotal = 500
                             with patch('memory_mcp.server_sdk.FAISSManager', return_value=mock_faiss):
-                                index, vault, redis, faiss = get_components()
+                                with patch('memory_mcp.server_sdk.GRAPHITI_AVAILABLE', False):
+                                    with patch('memory_mcp.server_sdk.LIVEGREP_AVAILABLE', False):
+                                        index, vault, redis, faiss, graphiti, livegrep = get_components()
 
-                                assert index is not None
-                                assert vault is not None
-                                assert redis is not None
-                                assert faiss is not None
+                                        assert index is not None
+                                        assert vault is not None
+                                        assert redis is not None
+                                        assert faiss is not None
 
     def test_get_components_returns_same_instance(self):
         """Test get_components returns same instance on subsequent calls."""
@@ -138,16 +160,20 @@ class TestComponentInitialization:
         sdk_module._vault = None
         sdk_module._redis = None
         sdk_module._faiss = None
+        sdk_module._graphiti = None
+        sdk_module._livegrep = None
 
         with patch('memory_mcp.server_sdk.SQLiteIndex'):
             with patch('memory_mcp.server_sdk.VaultManager'):
                 with patch('memory_mcp.server_sdk.REDIS_AVAILABLE', False):
                     with patch('memory_mcp.server_sdk.FAISS_AVAILABLE', False):
-                        index1, vault1, _, _ = get_components()
-                        index2, vault2, _, _ = get_components()
+                        with patch('memory_mcp.server_sdk.GRAPHITI_AVAILABLE', False):
+                            with patch('memory_mcp.server_sdk.LIVEGREP_AVAILABLE', False):
+                                index1, vault1, _, _, _, _ = get_components()
+                                index2, vault2, _, _, _, _ = get_components()
 
-                        assert index1 is index2
-                        assert vault1 is vault2
+                                assert index1 is index2
+                                assert vault1 is vault2
 
 
 # ============================================================================
@@ -159,12 +185,13 @@ class TestToolSchemas:
 
     @pytest.mark.asyncio
     async def test_list_tools_returns_all_tools(self):
-        """Test list_tools returns all 10 tools."""
+        """Test list_tools returns all 15 tools."""
         with patch('memory_mcp.server_sdk.get_components'):
             tools = await list_tools()
 
-            assert len(tools) == 10
+            assert len(tools) == 15
             tool_names = [t.name for t in tools]
+            # Core memory tools
             assert "memory_store" in tool_names
             assert "memory_search" in tool_names
             assert "memory_list" in tool_names
@@ -175,6 +202,13 @@ class TestToolSchemas:
             assert "vault_write" in tool_names
             assert "vault_read" in tool_names
             assert "memory_stats" in tool_names
+            # Graphiti knowledge graph tools
+            assert "search_entities" in tool_names
+            assert "search_facts" in tool_names
+            # livegrep code search tools
+            assert "code_search" in tool_names
+            assert "search_function" in tool_names
+            assert "search_class" in tool_names
 
     @pytest.mark.asyncio
     async def test_tool_schema_memory_store(self):
@@ -229,7 +263,7 @@ class TestMemoryStoreHandler:
         mock_index = MagicMock()
         mock_vault = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             with patch('uuid.uuid4', return_value=uuid_module.UUID('12345678-1234-5678-1234-567812345678')):
                 result = await call_tool("memory_store", {
                     "content": "test content",
@@ -250,7 +284,7 @@ class TestMemoryStoreHandler:
         mock_index = MagicMock()
         mock_vault = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             result = await call_tool("memory_store", {
                 "content": "minimal content",
                 "type": "note",
@@ -268,7 +302,7 @@ class TestMemoryStoreHandler:
         mock_vault = MagicMock()
 
         test_id = "test-id-123"
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             with patch('uuid.uuid4', return_value=uuid_module.UUID('12345678-1234-5678-1234-567812345678')):
                 result = await call_tool("memory_store", {
                     "content": "test",
@@ -284,7 +318,7 @@ class TestMemoryStoreHandler:
         mock_index = MagicMock()
         mock_vault = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             result = await call_tool("memory_store", {
                 "content": "def test(): pass",
                 "type": "code",
@@ -299,7 +333,7 @@ class TestMemoryStoreHandler:
         mock_index = MagicMock()
         mock_vault = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             result = await call_tool("memory_store", {
                 "content": "reference content",
                 "type": "reference",
@@ -314,7 +348,7 @@ class TestMemoryStoreHandler:
         mock_index = MagicMock()
         mock_vault = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             result = await call_tool("memory_store", {
                 "content": "conversation content",
                 "type": "conversation",
@@ -339,7 +373,7 @@ class TestMemorySearchHandler:
         mock_index.search_fulltext.return_value = [mock_doc]
         mock_vault = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             result = await call_tool("memory_search", {
                 "query": "test query",
                 "limit": 10
@@ -356,7 +390,7 @@ class TestMemorySearchHandler:
         mock_index.search_fulltext.return_value = []
         mock_vault = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             result = await call_tool("memory_search", {
                 "query": "nonexistent"
             })
@@ -371,7 +405,7 @@ class TestMemorySearchHandler:
         mock_index.search_fulltext.return_value = []
         mock_vault = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             await call_tool("memory_search", {
                 "query": "test",
                 "limit": 5
@@ -394,7 +428,7 @@ class TestMemorySearchHandler:
         mock_index.search_fulltext.return_value = mock_docs
         mock_vault = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             result = await call_tool("memory_search", {"query": "test"})
 
             assert "Found 3 results" in result[0].text
@@ -406,7 +440,7 @@ class TestMemorySearchHandler:
         mock_index.search_fulltext.return_value = []
         mock_vault = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             await call_tool("memory_search", {
                 "query": "test",
                 "type": "semantic"
@@ -431,7 +465,7 @@ class TestMemoryListHandler:
         mock_index.get_recent.return_value = [mock_doc]
         mock_vault = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             result = await call_tool("memory_list", {})
 
             assert len(result) == 1
@@ -444,7 +478,7 @@ class TestMemoryListHandler:
         mock_index.get_recent.return_value = []
         mock_vault = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             result = await call_tool("memory_list", {})
 
             assert len(result) == 1
@@ -457,7 +491,7 @@ class TestMemoryListHandler:
         mock_index.get_recent.return_value = []
         mock_vault = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             await call_tool("memory_list", {})
 
             # Verify default limit was used
@@ -484,7 +518,7 @@ class TestMemoryRecallHandler:
         mock_index.get.return_value = mock_doc
         mock_vault = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             result = await call_tool("memory_recall", {"id": "doc-123"})
 
             assert len(result) == 1
@@ -499,7 +533,7 @@ class TestMemoryRecallHandler:
         mock_index.get.return_value = None
         mock_vault = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             result = await call_tool("memory_recall", {"id": "nonexistent"})
 
             assert len(result) == 1
@@ -516,7 +550,7 @@ class TestMemoryDeleteHandler:
         mock_index.delete.return_value = True
         mock_vault = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             result = await call_tool("memory_delete", {"id": "doc-123"})
 
             assert len(result) == 1
@@ -529,7 +563,7 @@ class TestMemoryDeleteHandler:
         mock_index.delete.return_value = False
         mock_vault = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             result = await call_tool("memory_delete", {"id": "nonexistent"})
 
             assert len(result) == 1
@@ -550,7 +584,7 @@ class TestSessionSaveHandler:
         mock_vault = MagicMock()
         mock_redis = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, mock_redis, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, mock_redis, None, None, None)):
             result = await call_tool("session_save", {
                 "project_path": "home/user/project",
                 "active_files": ["file1.py", "file2.py"],
@@ -567,7 +601,7 @@ class TestSessionSaveHandler:
         mock_index = MagicMock()
         mock_vault = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             result = await call_tool("session_save", {
                 "project_path": "home/user/project"
             })
@@ -582,7 +616,7 @@ class TestSessionSaveHandler:
         mock_vault = MagicMock()
         mock_redis = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, mock_redis, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, mock_redis, None, None, None)):
             result = await call_tool("session_save", {
                 "project_path": "path"
             })
@@ -608,7 +642,7 @@ class TestSessionRestoreHandler:
         mock_redis = MagicMock()
         mock_redis.get_session.return_value = mock_state
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, mock_redis, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, mock_redis, None, None, None)):
             result = await call_tool("session_restore", {
                 "session_id": "session-123"
             })
@@ -623,7 +657,7 @@ class TestSessionRestoreHandler:
         mock_index = MagicMock()
         mock_vault = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             result = await call_tool("session_restore", {})
 
             assert len(result) == 1
@@ -637,7 +671,7 @@ class TestSessionRestoreHandler:
         mock_redis = MagicMock()
         mock_redis.get_session.return_value = None
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, mock_redis, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, mock_redis, None, None, None)):
             result = await call_tool("session_restore", {
                 "session_id": "nonexistent"
             })
@@ -663,7 +697,7 @@ class TestVaultWriteHandler:
         mock_vault = MagicMock()
         mock_vault.write_note.return_value = mock_note
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             result = await call_tool("vault_write", {
                 "path": "test_file",
                 "content": "# Test\n\nContent here",
@@ -685,7 +719,7 @@ class TestVaultWriteHandler:
         mock_vault = MagicMock()
         mock_vault.write_note.return_value = mock_note
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             result = await call_tool("vault_write", {
                 "path": "test",
                 "content": "Simple content"
@@ -713,7 +747,7 @@ class TestVaultReadHandler:
         mock_vault = MagicMock()
         mock_vault.read_note.return_value = mock_note
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             result = await call_tool("vault_read", {"path": "code/test"})
 
             assert len(result) == 1
@@ -727,7 +761,7 @@ class TestVaultReadHandler:
         mock_vault = MagicMock()
         mock_vault.read_note.return_value = None
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             result = await call_tool("vault_read", {"path": "nonexistent"})
 
             assert len(result) == 1
@@ -755,7 +789,7 @@ class TestMemoryStatsHandler:
         mock_faiss.index.ntotal = 200
         mock_redis = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, mock_redis, mock_faiss)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, mock_redis, mock_faiss, None, None)):
             result = await call_tool("memory_stats", {})
 
             assert len(result) == 1
@@ -772,7 +806,7 @@ class TestMemoryStatsHandler:
         mock_vault = MagicMock()
         mock_vault.get_stats.return_value = {'total_notes': 5}
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             result = await call_tool("memory_stats", {})
 
             assert len(result) == 1
@@ -789,7 +823,7 @@ class TestUnknownToolHandler:
         mock_index = MagicMock()
         mock_vault = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             result = await call_tool("unknown_tool", {})
 
             assert len(result) == 1
@@ -801,7 +835,7 @@ class TestUnknownToolHandler:
         mock_index = MagicMock()
         mock_vault = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             result = await call_tool("invalid", {})
 
             assert len(result) == 1
@@ -817,7 +851,7 @@ class TestErrorHandling:
         mock_index = MagicMock()
         mock_vault = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             # Missing "source" field
             with pytest.raises(KeyError):
                 await call_tool("memory_store", {
@@ -831,7 +865,7 @@ class TestErrorHandling:
         mock_index = MagicMock()
         mock_vault = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             with pytest.raises(KeyError):
                 await call_tool("memory_search", {})
 
@@ -841,7 +875,7 @@ class TestErrorHandling:
         mock_index = MagicMock()
         mock_vault = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             with pytest.raises(KeyError):
                 await call_tool("memory_recall", {})
 
@@ -851,7 +885,7 @@ class TestErrorHandling:
         mock_index = MagicMock()
         mock_vault = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             with pytest.raises(KeyError):
                 await call_tool("vault_write", {
                     "path": "test"
@@ -863,7 +897,7 @@ class TestErrorHandling:
         mock_index = MagicMock()
         mock_vault = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             with pytest.raises(KeyError):
                 await call_tool("vault_read", {})
 
@@ -873,7 +907,7 @@ class TestErrorHandling:
         mock_index = MagicMock()
         mock_vault = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             with pytest.raises(KeyError):
                 await call_tool("memory_delete", {})
 
@@ -898,7 +932,7 @@ class TestIntegration:
         mock_index.search_fulltext.return_value = [mock_stored_doc]
         mock_vault = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             # Store
             store_result = await call_tool("memory_store", {
                 "content": "stored content",
@@ -927,7 +961,7 @@ class TestIntegration:
         mock_redis = MagicMock()
         mock_redis.get_session.return_value = mock_state
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, mock_redis, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, mock_redis, None, None, None)):
             # Save
             save_result = await call_tool("session_save", {
                 "project_path": "project"
@@ -959,7 +993,7 @@ class TestIntegration:
         mock_vault.write_note.return_value = mock_note_write
         mock_vault.read_note.return_value = mock_note_read
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             # Write
             write_result = await call_tool("vault_write", {
                 "path": "test",
@@ -980,7 +1014,7 @@ class TestIntegration:
         mock_index = MagicMock()
         mock_vault = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             # Run multiple tool calls concurrently
             tasks = [
                 call_tool("memory_list", {}),
@@ -1011,7 +1045,7 @@ class TestIntegration:
         mock_index.get.return_value = mock_stored_doc
         mock_vault = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             # Store
             store_result = await call_tool("memory_store", {
                 "content": "def test(): pass",
@@ -1039,7 +1073,7 @@ class TestIntegration:
         mock_index.delete.return_value = True
         mock_vault = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             result = await call_tool("memory_delete", {"id": "doc-123"})
 
             assert "Deleted" in result[0].text
@@ -1064,7 +1098,7 @@ class TestIntegration:
         mock_vault.write_note.return_value = mock_note_write
         mock_vault.read_note.return_value = mock_note_read
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             # Write with all params
             write_result = await call_tool("vault_write", {
                 "path": "test",
@@ -1092,7 +1126,7 @@ class TestIntegration:
         mock_vault = MagicMock()
         mock_vault.get_stats.return_value = {'total_notes': 75}
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             result = await call_tool("memory_stats", {})
 
             assert "Memory Statistics" in result[0].text
@@ -1107,7 +1141,7 @@ class TestIntegration:
         mock_vault = MagicMock()
         mock_vault.get_stats.return_value = {'total_notes': 10}
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             # Execute multiple calls in sequence
             for i in range(5):
                 result = await call_tool("memory_search", {"query": f"test_{i}"})
@@ -1129,7 +1163,7 @@ class TestIntegration:
         mock_index.get.return_value = mock_doc
         mock_vault = MagicMock()
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, None, None, None, None)):
             result = await call_tool("memory_recall", {"id": "doc-123"})
 
             assert "none" in result[0].text.lower()
@@ -1148,7 +1182,7 @@ class TestIntegration:
         mock_redis = MagicMock()
         mock_redis.get_session.return_value = mock_state
 
-        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, mock_redis, None)):
+        with patch('memory_mcp.server_sdk.get_components', return_value=(mock_index, mock_vault, mock_redis, None, None, None)):
             result = await call_tool("session_restore", {
                 "session_id": "session-123"
             })

@@ -4,12 +4,15 @@
 #
 # Supports multiple embedding backends: local (Ollama), OpenAI, Voyage
 
+import logging
 import os
 import json
 import hashlib
 from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 try:
     import httpx
@@ -94,7 +97,8 @@ class LocalEmbeddingProvider(EmbeddingProvider):
         try:
             response = self._client.get(f"{self.endpoint}/api/tags")
             return response.status_code == 200
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Ollama health check failed: {e}")
             return False
 
 
@@ -242,7 +246,8 @@ class FallbackEmbeddingProvider(EmbeddingProvider):
                         self._providers.append(VoyageEmbeddingProvider(
                             model=self.config.voyage_model
                         ))
-            except Exception:
+            except Exception as e:
+                logger.debug(f"Failed to initialize {provider_name} provider: {e}")
                 continue
 
         if self._providers:
@@ -259,7 +264,8 @@ class FallbackEmbeddingProvider(EmbeddingProvider):
                 else:
                     self._active_provider = provider
                     return provider
-            except Exception:
+            except Exception as e:
+                logger.debug(f"Provider {provider.name} unavailable: {e}")
                 continue
 
         raise RuntimeError("No embedding providers available")
