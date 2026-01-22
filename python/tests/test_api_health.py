@@ -234,30 +234,18 @@ class TestComponentHealthChecks:
                 assert "components" in data
                 assert data["components"]["redis"] is True
 
-    def test_faiss_health_when_available(self, test_config, mock_faiss):
-        """Test FAISS health check when FAISS is available."""
-        with patch("memory_mcp.server.FAISS_AVAILABLE", True):
-            with patch("memory_mcp.server.FAISSManager") as MockFaiss:
-                mock_manager = MagicMock()
-                # Provide actual values for all accessed properties
-                mock_manager.count = 100
-                mock_manager.dimension = 768
-                mock_manager.deleted_count = 5
-                mock_manager.total_added = 105
-                mock_manager.config.index_type = "flat"
-                MockFaiss.return_value = mock_manager
+    def test_components_section_in_stats(self, test_config):
+        """Test stats includes components section."""
+        from memory_mcp.server import MemoryMCPServer
+        server = MemoryMCPServer(config=test_config)
 
-                from memory_mcp.server import MemoryMCPServer
-                server = MemoryMCPServer(config=test_config)
+        stats = server.handle_call_tool("memory_stats", {})
+        data = json.loads(stats["content"][0]["text"])
 
-                stats = server.handle_call_tool("memory_stats", {})
-                data = json.loads(stats["content"][0]["text"])
-
-                # Should include FAISS info if available
-                assert "components" in data
-                assert data["components"]["faiss"] is True
-                assert "faiss" in data
-                assert data["faiss"]["total_vectors"] == 100
+        # Should include components section
+        assert "components" in data
+        assert "sqlite" in data["components"]
+        assert "vault" in data["components"]
 
     def test_embedder_health_check(self, test_config, mock_embedding_provider):
         """Test embedding provider health when available."""
@@ -296,26 +284,25 @@ class TestGracefulDegradation:
             })
             assert search_result.get("isError") is not True
 
-    def test_search_without_faiss(self, test_config):
-        """Test search works when FAISS is unavailable (fallback to text search)."""
-        with patch("memory_mcp.server.FAISS_AVAILABLE", False):
-            from memory_mcp.server import MemoryMCPServer
-            server = MemoryMCPServer(config=test_config)
+    def test_text_search_always_available(self, test_config):
+        """Test text search works independently of optional components."""
+        from memory_mcp.server import MemoryMCPServer
+        server = MemoryMCPServer(config=test_config)
 
-            # Store content
-            server.handle_call_tool("memory_store", {
-                "content": "Content without FAISS indexing",
-                "type": "code",
-                "source": "no_faiss.py",
-            })
+        # Store content
+        server.handle_call_tool("memory_store", {
+            "content": "Content for text search testing",
+            "type": "code",
+            "source": "text_search_test.py",
+        })
 
-            # Text search should still work
-            result = server.handle_call_tool("memory_search", {
-                "query": "FAISS",
-                "type": "text",
-                "limit": 10
-            })
-            assert result.get("isError") is not True
+        # Text search should always work
+        result = server.handle_call_tool("memory_search", {
+            "query": "text search",
+            "type": "text",
+            "limit": 10
+        })
+        assert result.get("isError") is not True
 
     def test_session_save_without_redis(self, test_config):
         """Test session_save falls back gracefully when Redis unavailable."""
@@ -350,28 +337,27 @@ class TestGracefulDegradation:
 
     def test_all_optional_components_unavailable(self, test_config):
         """Test core functionality works with only SQLite and Vault."""
-        with patch("memory_mcp.server.REDIS_AVAILABLE", False):
-            with patch("memory_mcp.server.FAISS_AVAILABLE", False):
-                with patch("memory_mcp.server.get_embedding_provider") as mock_get_provider:
-                    mock_get_provider.return_value = None  # No provider
+        with patch("memory_mcp.redis_client.REDIS_AVAILABLE", False):
+            with patch("memory_mcp.server.get_embedding_provider") as mock_get_provider:
+                mock_get_provider.return_value = None  # No provider
 
-                    from memory_mcp.server import MemoryMCPServer
-                    server = MemoryMCPServer(config=test_config)
+                from memory_mcp.server import MemoryMCPServer
+                server = MemoryMCPServer(config=test_config)
 
-                    # Core operations should still work
-                    store_result = server.handle_call_tool("memory_store", {
-                        "content": "Minimal mode content",
-                        "type": "note",
-                        "source": "minimal.py",
-                    })
-                    assert store_result.get("isError") is not True
+                # Core operations should still work
+                store_result = server.handle_call_tool("memory_store", {
+                    "content": "Minimal mode content",
+                    "type": "note",
+                    "source": "minimal.py",
+                })
+                assert store_result.get("isError") is not True
 
-                    doc_id = json.loads(store_result["content"][0]["text"])["id"]
+                doc_id = json.loads(store_result["content"][0]["text"])["id"]
 
-                    recall_result = server.handle_call_tool("memory_recall", {
-                        "id": doc_id
-                    })
-                    assert recall_result.get("isError") is not True
+                recall_result = server.handle_call_tool("memory_recall", {
+                    "id": doc_id
+                })
+                assert recall_result.get("isError") is not True
 
 
 class TestErrorHandling:

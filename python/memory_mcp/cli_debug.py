@@ -437,7 +437,7 @@ class MemoryMCPDebugCLI(cmd.Cmd):
             status = f"{Colors.GREEN}✓{Colors.RESET}" if vault_ok else f"{Colors.RED}✗{Colors.RESET}"
             print(f"  {status} Vault: {'Connected' if vault_ok else 'Not available'}")
 
-            # Redis
+            # Redis (Hot tier)
             redis_ok = components.get("redis", False)
             status = f"{Colors.GREEN}✓{Colors.RESET}" if redis_ok else f"{Colors.YELLOW}○{Colors.RESET}"
             redis_info = ""
@@ -447,16 +447,21 @@ class MemoryMCPDebugCLI(cmd.Cmd):
                     hits = redis_stats.get("cache_hits", 0)
                     misses = redis_stats.get("cache_misses", 0)
                     redis_info = f" (hits: {hits}, misses: {misses})"
-            print(f"  {status} Redis: {'Connected' + redis_info if redis_ok else 'Not available (optional)'}")
+            print(f"  {status} Redis (Hot): {'Connected' + redis_info if redis_ok else 'Not available (optional)'}")
 
-            # FAISS
-            faiss_ok = components.get("faiss", False)
-            status = f"{Colors.GREEN}✓{Colors.RESET}" if faiss_ok else f"{Colors.YELLOW}○{Colors.RESET}"
-            faiss_info = ""
-            if faiss_ok and "faiss" in data:
-                vectors = data["faiss"].get("total_vectors", 0)
-                faiss_info = f" ({vectors} vectors)"
-            print(f"  {status} FAISS: {'Initialized' + faiss_info if faiss_ok else 'Not available (optional)'}")
+            # Graphiti (Warm tier - Knowledge Graph)
+            graphiti_ok = components.get("graphiti", False)
+            status = f"{Colors.GREEN}✓{Colors.RESET}" if graphiti_ok else f"{Colors.YELLOW}○{Colors.RESET}"
+            graphiti_info = ""
+            if graphiti_ok and "graphiti" in data:
+                entities = data["graphiti"].get("entity_count", 0)
+                graphiti_info = f" ({entities} entities)"
+            print(f"  {status} Graphiti (Warm): {'Connected' + graphiti_info if graphiti_ok else 'Not available (optional)'}")
+
+            # livegrep (Cold tier - Code Search)
+            livegrep_ok = components.get("livegrep", False)
+            status = f"{Colors.GREEN}✓{Colors.RESET}" if livegrep_ok else f"{Colors.YELLOW}○{Colors.RESET}"
+            print(f"  {status} livegrep (Cold): {'Available' if livegrep_ok else 'Not available (optional)'}")
 
             # Embedder
             embedder_ok = components.get("embedder", False)

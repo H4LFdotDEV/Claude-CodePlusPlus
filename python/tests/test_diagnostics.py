@@ -164,37 +164,62 @@ class TestDiagnosticsRedis:
         assert "1.5M" in result.message
 
 
-class TestDiagnosticsFAISS:
-    """Test FAISS diagnostic check."""
+class TestDiagnosticsGraphiti:
+    """Test Graphiti diagnostic check."""
 
-    def test_faiss_not_available(self, test_config):
-        """Test FAISS check when not installed."""
+    def test_graphiti_disabled(self, test_config):
+        """Test Graphiti check when disabled in config."""
         diag = Diagnostics()
 
-        with patch("memory_mcp.faiss_manager.FAISS_AVAILABLE", False):
-            result = diag._check_faiss()
+        # Graphiti is disabled by default in test_config
+        result = diag._check_graphiti()
 
         assert result.status == DiagnosticStatus.NOT_AVAILABLE
-        assert "not installed" in result.message.lower()
-        assert "pip install faiss" in result.suggestion
+        assert "disabled" in result.message.lower()
 
-    def test_faiss_check_success(self, test_config):
-        """Test FAISS check when healthy."""
+    def test_graphiti_check_returns_result(self, test_config, mock_graphiti):
+        """Test Graphiti check returns a valid result."""
         diag = Diagnostics()
 
-        with patch("memory_mcp.faiss_manager.FAISS_AVAILABLE", True):
-            with patch("memory_mcp.faiss_manager.FAISSManager") as MockFaiss:
-                mock_manager = MagicMock()
-                mock_manager.count = 100
-                mock_manager.dimension = 768
-                mock_manager.config.index_type = "flat"
-                MockFaiss.return_value = mock_manager
+        result = diag._check_graphiti()
 
-                result = diag._check_faiss()
+        # Should return a valid DiagnosticResult
+        assert result.component == "Graphiti"
+        # Either not available or has a status
+        assert result.status in (
+            DiagnosticStatus.OK,
+            DiagnosticStatus.NOT_AVAILABLE,
+            DiagnosticStatus.ERROR
+        )
 
-        assert result.status == DiagnosticStatus.OK
-        assert "100 vectors" in result.message
-        assert result.details["dimension"] == 768
+
+class TestDiagnosticsLivegrep:
+    """Test livegrep diagnostic check."""
+
+    def test_livegrep_disabled(self, test_config):
+        """Test livegrep check when disabled in config."""
+        diag = Diagnostics()
+
+        # livegrep is disabled by default in test_config
+        result = diag._check_livegrep()
+
+        assert result.status == DiagnosticStatus.NOT_AVAILABLE
+        assert "disabled" in result.message.lower()
+
+    def test_livegrep_check_returns_result(self, test_config, mock_livegrep):
+        """Test livegrep check returns a valid result."""
+        diag = Diagnostics()
+
+        result = diag._check_livegrep()
+
+        # Should return a valid DiagnosticResult
+        assert result.component == "livegrep"
+        # Either not available or has a status
+        assert result.status in (
+            DiagnosticStatus.OK,
+            DiagnosticStatus.NOT_AVAILABLE,
+            DiagnosticStatus.ERROR
+        )
 
 
 class TestDiagnosticsEmbedder:
@@ -244,9 +269,10 @@ class TestDiagnosticsCheckAll:
         assert "SQLite" in components
         assert "Vault" in components
         assert "Redis" in components
-        assert "FAISS" in components
+        assert "Graphiti" in components
+        assert "livegrep" in components
         assert "Embedder" in components
-        assert len(results) == 5
+        assert len(results) == 6
 
     def test_get_summary(self, test_config):
         """Test summary generation."""
@@ -255,13 +281,13 @@ class TestDiagnosticsCheckAll:
         summary = diag.get_summary()
 
         assert "total_checks" in summary
-        assert summary["total_checks"] == 5
+        assert summary["total_checks"] == 6
         assert "ok" in summary
         assert "warnings" in summary
         assert "errors" in summary
         assert "core_healthy" in summary
         assert "results" in summary
-        assert len(summary["results"]) == 5
+        assert len(summary["results"]) == 6
 
     def test_core_healthy_check(self, test_config):
         """Test core_healthy reflects SQLite and Vault status."""
@@ -270,7 +296,8 @@ class TestDiagnosticsCheckAll:
             DiagnosticResult("SQLite", DiagnosticStatus.OK, "OK"),
             DiagnosticResult("Vault", DiagnosticStatus.OK, "OK"),
             DiagnosticResult("Redis", DiagnosticStatus.NOT_AVAILABLE, "Not installed"),
-            DiagnosticResult("FAISS", DiagnosticStatus.NOT_AVAILABLE, "Not installed"),
+            DiagnosticResult("Graphiti", DiagnosticStatus.NOT_AVAILABLE, "Not configured"),
+            DiagnosticResult("livegrep", DiagnosticStatus.NOT_AVAILABLE, "Not configured"),
             DiagnosticResult("Embedder", DiagnosticStatus.NOT_AVAILABLE, "Not installed"),
         ]
 
@@ -295,10 +322,9 @@ class TestDiagnosticsCLI:
     def test_print_diagnostics_shows_suggestions(self, test_config, capsys):
         """Test suggestions are shown for issues."""
         with patch("memory_mcp.redis_client.REDIS_AVAILABLE", False):
-            with patch("memory_mcp.faiss_manager.FAISS_AVAILABLE", False):
-                print_diagnostics()
+            print_diagnostics()
 
         captured = capsys.readouterr()
 
         # Should show installation suggestions
-        assert "pip install" in captured.out.lower() or "install" in captured.out.lower()
+        assert "pip install" in captured.out.lower() or "install" in captured.out.lower() or "disabled" in captured.out.lower()

@@ -297,7 +297,7 @@ class TestCLIHealth:
         assert "100" in captured.out
         assert "Vault" in captured.out
         assert "Redis" in captured.out
-        assert "FAISS" in captured.out
+        assert "Graphiti" in captured.out
         assert "Core components healthy" in captured.out
 
     def test_health_command_partial(self, cli, capsys):
@@ -310,7 +310,8 @@ class TestCLIHealth:
                         "sqlite": True,
                         "vault": True,
                         "redis": False,
-                        "faiss": False,
+                        "graphiti": False,
+                        "livegrep": False,
                         "embedder": False
                     }
                 }),

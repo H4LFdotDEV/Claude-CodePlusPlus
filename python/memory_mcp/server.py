@@ -12,13 +12,11 @@ import sys
 import uuid
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone
-import numpy as np
 
 from .config import get_config, MemoryConfig, set_config
 from .sqlite_index import SQLiteIndex, MemoryDocument
 from .vault_manager import VaultManager
 from .redis_client import RedisClient, SessionState, REDIS_AVAILABLE
-from .faiss_manager import FAISSManager, FAISS_AVAILABLE
 from .embedding_provider import get_embedding_provider, FallbackEmbeddingProvider
 from .validation import (
     validate_string, validate_int, validate_list, validate_doc_type,
@@ -66,7 +64,6 @@ class MemoryMCPServer:
 
         # Optional components (may not be available)
         self.redis: Optional[RedisClient] = None
-        self.faiss: Optional[FAISSManager] = None
         self.embedder: Optional[FallbackEmbeddingProvider] = None
 
         self._init_optional_components()
@@ -92,17 +89,6 @@ class MemoryMCPServer:
         else:
             logger.info("Redis not available - install with: pip install redis")
 
-        # FAISS (vector search)
-        if FAISS_AVAILABLE:
-            try:
-                self.faiss = FAISSManager()
-                logger.info(f"FAISS initialized with {self.faiss.count} vectors")
-            except Exception as e:
-                logger.warning(f"FAISS initialization failed: {e}")
-                self.faiss = None
-        else:
-            logger.info("FAISS not available - install with: pip install faiss-cpu")
-
         # Embeddings
         try:
             self.embedder = get_embedding_provider()
@@ -110,31 +96,6 @@ class MemoryMCPServer:
         except Exception as e:
             logger.warning(f"Embedding provider initialization failed: {e}")
             self.embedder = None
-
-    def _get_embedding(self, text: str) -> np.ndarray:
-        """Get embedding for text with Redis caching for performance."""
-        # Check cache first
-        if self.redis:
-            try:
-                cached = self.redis.get_cached_embedding(text)
-                if cached is not None:
-                    logger.debug("Embedding cache hit")
-                    return np.array(cached, dtype=np.float32)
-            except Exception as e:
-                logger.debug(f"Redis embedding cache lookup failed: {e}")
-
-        # Generate embedding
-        embedding = self.embedder.embed(text)
-
-        # Cache for next time (24 hour TTL)
-        if self.redis:
-            try:
-                self.redis.cache_embedding(text, embedding.tolist(), ttl=86400)
-                logger.debug("Cached embedding in Redis")
-            except Exception as e:
-                logger.debug(f"Redis embedding cache store failed: {e}")
-
-        return embedding
 
     # MCP Protocol Methods
 
@@ -229,18 +190,6 @@ class MemoryMCPServer:
             tags=tags
         )
 
-        # Generate embedding if available
-        if self.embedder and self.faiss:
-            try:
-                embedding = self.embedder.embed(content)
-                self.faiss.add(doc_id, embedding)
-                doc.embedding_id = doc_id
-                self.faiss.save()
-                logger.debug(f"Generated embedding for doc {doc_id}")
-            except Exception as e:
-                logger.warning(f"Failed to generate embedding: {e}")
-                # Continue without embedding
-
         # Store in SQLite
         self.sqlite.insert(doc)
         logger.info(f"Stored document {doc_id} of type {doc_type}")
@@ -302,33 +251,23 @@ class MemoryMCPServer:
                             "match_type": "text"
                         })
 
-        # Semantic search via FAISS
-        if search_type in ["semantic", "hybrid"] and self.embedder and self.faiss:
-            try:
-                query_embedding = self._get_embedding(query)
-                faiss_results = self.faiss.search(query_embedding, k=limit)
-
-                doc_ids = [r.doc_id for r in faiss_results]
-                docs = self.sqlite.get_by_embedding_ids(doc_ids)
-                doc_map = {d.id: d for d in docs}
-
-                for fr in faiss_results:
-                    if fr.doc_id in doc_map:
-                        doc = doc_map[fr.doc_id]
-                        if self._matches_filters(doc, filters):
-                            # Avoid duplicates in hybrid mode using O(1) set lookup
-                            if doc.id not in seen_ids:
-                                seen_ids.add(doc.id)
-                                results.append({
-                                    "id": doc.id,
-                                    "content": doc.content[:500],
-                                    "type": doc.doc_type,
-                                    "source": doc.source,
-                                    "score": fr.score,
-                                    "match_type": "semantic"
-                                })
-            except Exception as e:
-                logger.debug(f"Semantic search failed (falling back to text): {e}")
+        # TODO: Semantic search via Graphiti knowledge graph (warm tier)
+        # For now, semantic search falls back to text search
+        if search_type == "semantic" and not results:
+            logger.debug("Semantic search requested but Graphiti not yet integrated - using text search")
+            text_results = self.sqlite.search_fulltext(query, limit=limit * 2)
+            for doc in text_results:
+                if self._matches_filters(doc, filters):
+                    if doc.id not in seen_ids:
+                        seen_ids.add(doc.id)
+                        results.append({
+                            "id": doc.id,
+                            "content": doc.content[:500],
+                            "type": doc.doc_type,
+                            "source": doc.source,
+                            "score": 0.8,  # Lower score for fallback
+                            "match_type": "text_fallback"
+                        })
 
         # Sort by score and limit
         results.sort(key=lambda x: x["score"], reverse=True)
@@ -376,15 +315,6 @@ class MemoryMCPServer:
         """Delete a memory."""
         doc_id = validate_string(args.get("id"), "id", min_len=1, max_len=64)
         logger.debug(f"Deleting document: {doc_id}")
-
-        # Delete from FAISS
-        if self.faiss:
-            try:
-                self.faiss.delete(doc_id)
-                self.faiss.save()
-                logger.debug(f"Deleted from FAISS: {doc_id}")
-            except Exception as e:
-                logger.warning(f"FAISS deletion failed for {doc_id}: {e}")
 
         # Delete from SQLite
         deleted = self.sqlite.delete(doc_id)
@@ -583,7 +513,7 @@ class MemoryMCPServer:
         - session_id: Current server session ID
         - components: Boolean availability of each component
         - health: Status and latency for each component
-        - Detailed stats for sqlite, vault, redis, faiss, embedder
+        - Detailed stats for sqlite, vault, redis, embedder
         """
         import time
         logger.debug("Gathering memory statistics")
@@ -595,7 +525,6 @@ class MemoryMCPServer:
                 "sqlite": True,
                 "vault": True,
                 "redis": self.redis is not None,
-                "faiss": self.faiss is not None,
                 "embedder": self.embedder is not None
             },
             "health": {}
@@ -647,29 +576,6 @@ class MemoryMCPServer:
                 stats["health"]["redis"] = {"status": "error", "error": str(e)}
         else:
             stats["health"]["redis"] = {"status": "not_available"}
-
-        # FAISS stats with health check
-        if self.faiss:
-            try:
-                start = time.time()
-                faiss_stats = {
-                    "total_vectors": self.faiss.count,
-                    "dimension": self.faiss.dimension,
-                    "index_type": self.faiss.config.index_type if hasattr(self.faiss, 'config') else "unknown",
-                    "deleted_count": getattr(self.faiss, 'deleted_count', 0),
-                    "total_added": getattr(self.faiss, 'total_added', self.faiss.count)
-                }
-                latency_ms = (time.time() - start) * 1000
-                stats["faiss"] = faiss_stats
-                stats["health"]["faiss"] = {
-                    "status": "available",
-                    "latency_ms": round(latency_ms, 2)
-                }
-            except Exception as e:
-                logger.warning(f"Failed to get FAISS stats: {e}")
-                stats["health"]["faiss"] = {"status": "error", "error": str(e)}
-        else:
-            stats["health"]["faiss"] = {"status": "not_available"}
 
         # Embedder info with health check
         if self.embedder:

@@ -3,7 +3,6 @@ Tests for Enhanced Memory Stats.
 
 Tests the enhanced memory_stats tool output including:
 - Component health checks with latency
-- FAISS detailed stats (index_type, deleted_count)
 - Redis health status
 - Embedder dimension info
 """
@@ -60,7 +59,6 @@ class TestEnhancedStatsFormat:
         assert isinstance(data["components"]["sqlite"], bool)
         assert isinstance(data["components"]["vault"], bool)
         assert isinstance(data["components"]["redis"], bool)
-        assert isinstance(data["components"]["faiss"], bool)
         assert isinstance(data["components"]["embedder"], bool)
 
     def test_stats_includes_session_id(self, mcp_server):
@@ -117,55 +115,6 @@ class TestEnhancedStatsWithRedis:
                 data = json.loads(result["content"][0]["text"])
 
                 assert data["health"]["redis"]["status"] == "degraded"
-
-
-class TestEnhancedStatsWithFAISS:
-    """Test enhanced stats with FAISS available."""
-
-    def test_faiss_stats_include_index_type(self, test_config):
-        """Test FAISS stats include index_type."""
-        with patch("memory_mcp.server.FAISS_AVAILABLE", True):
-            with patch("memory_mcp.server.FAISSManager") as MockFaiss:
-                mock_manager = MagicMock()
-                mock_manager.count = 500
-                mock_manager.dimension = 768
-                mock_manager.deleted_count = 10
-                mock_manager.total_added = 510
-                mock_manager.config.index_type = "flat"
-                MockFaiss.return_value = mock_manager
-
-                from memory_mcp.server import MemoryMCPServer
-                server = MemoryMCPServer(config=test_config)
-
-                result = server.handle_call_tool("memory_stats", {})
-                data = json.loads(result["content"][0]["text"])
-
-                assert data["faiss"]["total_vectors"] == 500
-                assert data["faiss"]["dimension"] == 768
-                assert data["faiss"]["index_type"] == "flat"
-                assert data["faiss"]["deleted_count"] == 10
-                assert data["faiss"]["total_added"] == 510
-
-    def test_faiss_health_status(self, test_config):
-        """Test FAISS health status in stats."""
-        with patch("memory_mcp.server.FAISS_AVAILABLE", True):
-            with patch("memory_mcp.server.FAISSManager") as MockFaiss:
-                mock_manager = MagicMock()
-                mock_manager.count = 100
-                mock_manager.dimension = 768
-                mock_manager.deleted_count = 0
-                mock_manager.total_added = 100
-                mock_manager.config.index_type = "hnsw"
-                MockFaiss.return_value = mock_manager
-
-                from memory_mcp.server import MemoryMCPServer
-                server = MemoryMCPServer(config=test_config)
-
-                result = server.handle_call_tool("memory_stats", {})
-                data = json.loads(result["content"][0]["text"])
-
-                assert data["health"]["faiss"]["status"] == "available"
-                assert "latency_ms" in data["health"]["faiss"]
 
 
 class TestEnhancedStatsWithEmbedder:
@@ -236,18 +185,6 @@ class TestEnhancedStatsUnavailable:
 
             assert data["health"]["redis"]["status"] == "not_available"
             assert data["components"]["redis"] is False
-
-    def test_faiss_not_available_status(self, test_config):
-        """Test FAISS health shows not_available when not configured."""
-        with patch("memory_mcp.server.FAISS_AVAILABLE", False):
-            from memory_mcp.server import MemoryMCPServer
-            server = MemoryMCPServer(config=test_config)
-
-            result = server.handle_call_tool("memory_stats", {})
-            data = json.loads(result["content"][0]["text"])
-
-            assert data["health"]["faiss"]["status"] == "not_available"
-            assert data["components"]["faiss"] is False
 
     def test_embedder_not_available_status(self, test_config):
         """Test embedder health shows not_available when not configured."""

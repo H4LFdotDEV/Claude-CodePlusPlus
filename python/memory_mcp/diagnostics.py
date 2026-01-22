@@ -3,9 +3,10 @@
 Component Diagnostics for Memory MCP Server.
 
 Provides comprehensive health checks and diagnostics for all Memory MCP components:
-- SQLite (cold storage)
+- SQLite (metadata storage)
 - Redis (hot cache)
-- FAISS (vector search)
+- Graphiti (warm knowledge graph)
+- livegrep (cold code search)
 - Vault (archive storage)
 - Embedder (embedding provider)
 
@@ -75,7 +76,8 @@ class Diagnostics:
         self.results.append(self._check_sqlite())
         self.results.append(self._check_vault())
         self.results.append(self._check_redis())
-        self.results.append(self._check_faiss())
+        self.results.append(self._check_graphiti())
+        self.results.append(self._check_livegrep())
         self.results.append(self._check_embedder())
 
         return self.results
@@ -133,7 +135,7 @@ class Diagnostics:
             stats = vault.get_stats()
             latency = (time.time() - start) * 1000
 
-            vault_path = config.vault_path
+            vault_path = config.vault.path
             if not vault_path or not Path(vault_path).exists():
                 return DiagnosticResult(
                     component="Vault",
@@ -214,43 +216,125 @@ class Diagnostics:
                 suggestion="Check REDIS_URL environment variable (default: redis://localhost:6379)"
             )
 
-    def _check_faiss(self) -> DiagnosticResult:
-        """Check FAISS availability and health."""
+    def _check_graphiti(self) -> DiagnosticResult:
+        """Check Graphiti/Neo4j knowledge graph availability."""
         try:
-            from .faiss_manager import FAISS_AVAILABLE
+            from .config import get_config
+            config = get_config()
 
-            if not FAISS_AVAILABLE:
+            if not config.graphiti.enabled:
                 return DiagnosticResult(
-                    component="FAISS",
+                    component="Graphiti",
                     status=DiagnosticStatus.NOT_AVAILABLE,
-                    message="FAISS library not installed",
-                    suggestion="Install with: pip install faiss-cpu (or faiss-gpu for GPU support)"
+                    message="Graphiti disabled in config",
+                    suggestion="Set graphiti.enabled=true in config to enable knowledge graph"
+                )
+
+            try:
+                from .graphiti_manager import GraphitiManager, GRAPHITI_AVAILABLE
+            except ImportError:
+                return DiagnosticResult(
+                    component="Graphiti",
+                    status=DiagnosticStatus.NOT_AVAILABLE,
+                    message="Graphiti library not installed",
+                    suggestion="Install with: pip install graphiti-core"
+                )
+
+            if not GRAPHITI_AVAILABLE:
+                return DiagnosticResult(
+                    component="Graphiti",
+                    status=DiagnosticStatus.NOT_AVAILABLE,
+                    message="Graphiti dependencies not available",
+                    suggestion="Install with: pip install graphiti-core neo4j"
                 )
 
             start = time.time()
-            from .faiss_manager import FAISSManager
-
-            manager = FAISSManager()
+            manager = GraphitiManager(
+                uri=config.graphiti.uri,
+                user=config.graphiti.user,
+                password=config.graphiti.password
+            )
             latency = (time.time() - start) * 1000
 
             return DiagnosticResult(
-                component="FAISS",
+                component="Graphiti",
                 status=DiagnosticStatus.OK,
-                message=f"Initialized - {manager.count} vectors, dimension={manager.dimension}",
+                message=f"Connected to {config.graphiti.uri}",
                 details={
-                    "total_vectors": manager.count,
-                    "dimension": manager.dimension,
-                    "index_type": manager.config.index_type if hasattr(manager, 'config') else "unknown"
+                    "uri": config.graphiti.uri,
+                    "user": config.graphiti.user
                 },
                 latency_ms=round(latency, 2)
             )
 
         except Exception as e:
             return DiagnosticResult(
-                component="FAISS",
+                component="Graphiti",
                 status=DiagnosticStatus.ERROR,
-                message=f"FAISS error: {e}",
-                suggestion="Check FAISS_INDEX_PATH and ensure write permissions"
+                message=f"Graphiti error: {e}",
+                suggestion="Check NEO4J_URI and NEO4J_PASSWORD environment variables"
+            )
+
+    def _check_livegrep(self) -> DiagnosticResult:
+        """Check livegrep code search availability."""
+        try:
+            from .config import get_config
+            config = get_config()
+
+            if not config.livegrep.enabled:
+                return DiagnosticResult(
+                    component="livegrep",
+                    status=DiagnosticStatus.NOT_AVAILABLE,
+                    message="livegrep disabled in config",
+                    suggestion="Set livegrep.enabled=true in config to enable code search"
+                )
+
+            try:
+                from .livegrep_client import LivegrepClient, HTTPX_AVAILABLE
+            except ImportError:
+                return DiagnosticResult(
+                    component="livegrep",
+                    status=DiagnosticStatus.NOT_AVAILABLE,
+                    message="httpx library not installed",
+                    suggestion="Install with: pip install httpx"
+                )
+
+            if not HTTPX_AVAILABLE:
+                return DiagnosticResult(
+                    component="livegrep",
+                    status=DiagnosticStatus.NOT_AVAILABLE,
+                    message="httpx not available",
+                    suggestion="Install with: pip install httpx"
+                )
+
+            start = time.time()
+            client = LivegrepClient(endpoint=config.livegrep.endpoint)
+            healthy = client.health_check()
+            latency = (time.time() - start) * 1000
+
+            if not healthy:
+                return DiagnosticResult(
+                    component="livegrep",
+                    status=DiagnosticStatus.WARNING,
+                    message=f"Cannot reach livegrep at {config.livegrep.endpoint}",
+                    suggestion="Ensure livegrep server is running",
+                    latency_ms=round(latency, 2)
+                )
+
+            return DiagnosticResult(
+                component="livegrep",
+                status=DiagnosticStatus.OK,
+                message=f"Connected to {config.livegrep.endpoint}",
+                details={"endpoint": config.livegrep.endpoint},
+                latency_ms=round(latency, 2)
+            )
+
+        except Exception as e:
+            return DiagnosticResult(
+                component="livegrep",
+                status=DiagnosticStatus.ERROR,
+                message=f"livegrep error: {e}",
+                suggestion="Check LIVEGREP_ENDPOINT environment variable"
             )
 
     def _check_embedder(self) -> DiagnosticResult:

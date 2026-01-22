@@ -2,7 +2,7 @@
 # Backup System for Claude Code++ Memory
 # Jeremiah Kroesche | Halfservers LLC
 #
-# Automated backups of SQLite cold storage and FAISS indices
+# Automated backups of SQLite metadata storage and Obsidian vault
 # with local filesystem rotation and cloud backup support
 
 import os
@@ -55,8 +55,7 @@ class BackupConfig:
     compression_level: int = 6
     verify_integrity: bool = True
     include_sqlite: bool = True
-    include_faiss: bool = True
-    include_vault: bool = False
+    include_vault: bool = True  # Archive tier - human-readable export
 
 
 class BackupStrategy(ABC):
@@ -449,10 +448,7 @@ class BackupManager:
         sources = {}
 
         if self.backup_config.include_sqlite:
-            sources["sqlite"] = self.memory_config.get("sqlite_path", "~/.claude-code-pp/memory/sqlite/memories.db")
-
-        if self.backup_config.include_faiss:
-            sources["faiss"] = self.memory_config.get("faiss_path", "~/.claude-code-pp/memory/faiss")
+            sources["sqlite"] = self.memory_config.get("sqlite_path", "~/.claude-code-pp/memory/metadata.db")
 
         if self.backup_config.include_vault:
             sources["vault"] = self.memory_config.get("vault_path", "~/.claude-code-pp/memory/vault")

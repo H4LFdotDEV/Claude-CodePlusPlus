@@ -4,7 +4,7 @@ Request Tracing System for Memory MCP Server.
 Provides request tracing capabilities for debugging and performance analysis:
 - Assigns unique request_id to every MCP tool invocation
 - Logs request/response/error with timestamps
-- Tracks request flow through memory tiers (SQLite, Redis, FAISS)
+- Tracks request flow through memory tiers (SQLite, Redis, Graphiti, livegrep)
 - Performance profiling per request
 
 Usage:

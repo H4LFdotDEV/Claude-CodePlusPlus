@@ -27,7 +27,7 @@ class MemoryDocument:
     project: Optional[str] = None
     tags: List[str] = None
     metadata: Dict[str, Any] = None
-    embedding_id: Optional[str] = None  # Reference to FAISS
+    embedding_id: Optional[str] = None  # Reference to vector storage
     vault_path: Optional[str] = None  # Reference to markdown file
     created_at: str = None
     updated_at: str = None

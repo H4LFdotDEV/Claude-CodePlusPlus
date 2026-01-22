@@ -43,17 +43,15 @@ def temp_source_dir():
     with open(sqlite_file, "w") as f:
         f.write("SQLITE DATABASE MOCK")
 
-    # Create FAISS directory with files
-    faiss_dir = os.path.join(tmp, "faiss_index")
-    os.makedirs(faiss_dir)
-    with open(os.path.join(faiss_dir, "index.faiss"), "w") as f:
-        f.write("FAISS INDEX MOCK")
-    with open(os.path.join(faiss_dir, "ivf_data.pkl"), "w") as f:
-        f.write("FAISS DATA MOCK")
+    # Create vault directory with files
+    vault_dir = os.path.join(tmp, "vault")
+    os.makedirs(vault_dir)
+    with open(os.path.join(vault_dir, "note.md"), "w") as f:
+        f.write("# Test Note\n\nVault content mock")
 
     yield {
         "sqlite": sqlite_file,
-        "faiss": faiss_dir,
+        "vault": vault_dir,
         "root": tmp
     }
     shutil.rmtree(tmp, ignore_errors=True)
@@ -68,7 +66,7 @@ def sample_metadata():
         backup_type="full",
         source_paths={
             "sqlite": "~/.claude-code-pp/memory/sqlite/memories.db",
-            "faiss": "~/.claude-code-pp/memory/faiss"
+            "vault": "~/.claude-code-pp/vault"
         },
         file_hashes={},
         size_bytes=0,
@@ -88,8 +86,7 @@ def backup_config():
         compression_level=6,
         verify_integrity=True,
         include_sqlite=True,
-        include_faiss=True,
-        include_vault=False,
+        include_vault=True,
     )
 
 
@@ -149,7 +146,7 @@ class TestLocalBackupStrategyBackup:
         local_backup_strategy.config.compress = False  # Disable compression
         sample_metadata.source_paths = {
             "sqlite": temp_source_dir["sqlite"],
-            "faiss": temp_source_dir["faiss"]
+            "faiss": temp_source_dir["vault"]
         }
 
         result = local_backup_strategy.backup(sample_metadata)
@@ -164,7 +161,7 @@ class TestLocalBackupStrategyBackup:
         local_backup_strategy.config.compress = False  # Disable compression for this test
         sample_metadata.source_paths = {
             "sqlite": temp_source_dir["sqlite"],
-            "faiss": temp_source_dir["faiss"]
+            "vault": temp_source_dir["vault"]
         }
 
         result = local_backup_strategy.backup(sample_metadata)
@@ -172,7 +169,7 @@ class TestLocalBackupStrategyBackup:
         assert result is True
         backup_dir = local_backup_strategy._get_backup_dir(sample_metadata.backup_id)
         assert os.path.exists(os.path.join(backup_dir, "sqlite"))
-        assert os.path.exists(os.path.join(backup_dir, "faiss"))
+        assert os.path.exists(os.path.join(backup_dir, "vault"))
 
     def test_backup_creates_manifest(self, local_backup_strategy, sample_metadata, temp_source_dir):
         """Test that backup creates manifest.json."""
@@ -562,7 +559,7 @@ class TestBackupManagerIntegration:
             strategy=strategy,
             memory_config={
                 "sqlite_path": temp_source_dir["sqlite"],
-                "faiss_path": temp_source_dir["faiss"],
+                "vault_path": temp_source_dir["vault"],
             }
         )
 
@@ -582,7 +579,7 @@ class TestBackupManagerIntegration:
             strategy=strategy,
             memory_config={
                 "sqlite_path": temp_source_dir["sqlite"],
-                "faiss_path": temp_source_dir["faiss"],
+                "vault_path": temp_source_dir["vault"],
             }
         )
 

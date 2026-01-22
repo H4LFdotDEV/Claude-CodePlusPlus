@@ -26,7 +26,6 @@ logger = logging.getLogger("memory_mcp_sdk")
 from .sqlite_index import SQLiteIndex
 from .vault_manager import VaultManager
 from .redis_client import RedisClient, REDIS_AVAILABLE
-from .faiss_manager import FAISSManager, FAISS_AVAILABLE
 from .config import get_config
 
 # Import new tier components
@@ -49,7 +48,6 @@ server = Server("claude-code-pp-memory")
 _index = None
 _vault = None
 _redis = None
-_faiss = None
 _graphiti = None
 _livegrep = None
 _components_lock = threading.Lock()
@@ -62,11 +60,10 @@ def get_components():
         - index: SQLiteIndex (metadata storage)
         - vault: VaultManager (human-readable archive)
         - redis: RedisClient (hot session cache)
-        - faiss: FAISSManager (legacy vector search - deprecated)
         - graphiti: GraphitiManager (warm knowledge graph)
         - livegrep: LivegrepClient (cold code search)
     """
-    global _index, _vault, _redis, _faiss, _graphiti, _livegrep
+    global _index, _vault, _redis, _graphiti, _livegrep
     # First check without lock (fast path)
     if _index is None:
         with _components_lock:
@@ -84,11 +81,6 @@ def get_components():
                 if REDIS_AVAILABLE:
                     _redis = RedisClient()
                     logger.info("Redis connected (hot tier)")
-
-                # Tier 2: Warm - Legacy FAISS (deprecated, use Graphiti)
-                if FAISS_AVAILABLE:
-                    _faiss = FAISSManager()
-                    logger.info(f"FAISS initialized with {_faiss.index.ntotal} vectors (legacy)")
 
                 # Tier 2: Warm - Graphiti Knowledge Graph
                 if GRAPHITI_AVAILABLE and config.graphiti.enabled:
@@ -109,7 +101,7 @@ def get_components():
                         logger.warning("livegrep not available - code search disabled")
                         _livegrep = None
 
-    return _index, _vault, _redis, _faiss, _graphiti, _livegrep
+    return _index, _vault, _redis, _graphiti, _livegrep
 
 # Define tools
 @server.list_tools()
@@ -306,7 +298,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     """Handle tool calls."""
     logger.info(f"tools/call: {name} with {arguments}")
 
-    index, vault, redis, faiss, graphiti, livegrep = get_components()
+    index, vault, redis, graphiti, livegrep = get_components()
 
     if name == "memory_store":
         from .sqlite_index import MemoryDocument
@@ -464,7 +456,6 @@ Modified: {note.modified_at}
 Tier Overview:
 - Hot (Redis): {'available' if redis else 'N/A'}
 - Warm (Graphiti): {graphiti_status}
-- Warm (FAISS - legacy): {faiss.index.ntotal if faiss else 'N/A'} vectors
 - Cold (livegrep): {livegrep_status}
 - Archive (Vault): {vault_stats.get('total_notes', 0)} notes
 

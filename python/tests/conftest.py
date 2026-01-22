@@ -1,5 +1,11 @@
 # conftest.py
 # Pytest fixtures for memory_mcp tests
+#
+# Memory Tiers:
+#   Hot:     Redis (session cache)
+#   Warm:    Graphiti/Neo4j (knowledge graph)
+#   Cold:    livegrep (artifact search)
+#   Archive: Obsidian vault (human-readable export)
 
 import os
 import sys
@@ -16,10 +22,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from memory_mcp.config import (
     MemoryConfig,
     RedisConfig,
-    FAISSConfig,
     SQLiteConfig,
     VaultConfig,
     EmbeddingConfig,
+    GraphitiConfig,
+    LivegrepConfig,
     set_config,
 )
 
@@ -44,11 +51,6 @@ def test_config(temp_dir):
             ttl_templates=60,
             ttl_queries=60,
         ),
-        faiss=FAISSConfig(
-            index_type="flat",
-            dimension=768,
-            rebuild_threshold=0.1,
-        ),
         sqlite=SQLiteConfig(
             path=os.path.join(temp_dir, "test_memories.db"),
         ),
@@ -62,8 +64,16 @@ def test_config(temp_dir):
             local_endpoint="http://localhost:11434",
             fallback_order=["local"],
         ),
+        graphiti=GraphitiConfig(
+            uri="bolt://localhost:7687",
+            user="neo4j",
+            enabled=False,  # Disabled for tests unless Neo4j is available
+        ),
+        livegrep=LivegrepConfig(
+            endpoint="http://localhost:8910",
+            enabled=False,  # Disabled for tests unless livegrep is available
+        ),
         base_path=temp_dir,
-        faiss_path=os.path.join(temp_dir, "faiss"),
     )
     config.ensure_directories()
     set_config(config)
@@ -143,15 +153,21 @@ def mock_redis():
 
 
 @pytest.fixture
-def mock_faiss():
-    """Mock FAISS index for tests without FAISS."""
+def mock_graphiti():
+    """Mock Graphiti client for tests without Neo4j."""
     mock = MagicMock()
-    mock.ntotal = 0
-    mock.add.return_value = None
-    mock.search.return_value = (
-        [[0.1, 0.2, 0.3]],  # distances
-        [[0, 1, 2]],  # indices
-    )
+    mock.add_episode.return_value = None
+    mock.search.return_value = []
+    mock.get_entity.return_value = None
+    return mock
+
+
+@pytest.fixture
+def mock_livegrep():
+    """Mock livegrep client for tests without livegrep."""
+    mock = MagicMock()
+    mock.search.return_value = {"results": [], "total_matches": 0}
+    mock.health_check.return_value = True
     return mock
 
 
@@ -203,6 +219,9 @@ def clean_env():
         "OPENAI_API_KEY",
         "VOYAGE_API_KEY",
         "CLAUDE_CODE_PP_CONFIG",
+        "NEO4J_URI",
+        "NEO4J_PASSWORD",
+        "LIVEGREP_ENDPOINT",
     ]
     for key in keys_to_clean:
         original_env[key] = os.environ.get(key)

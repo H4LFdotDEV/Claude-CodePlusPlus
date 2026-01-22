@@ -13,10 +13,11 @@ from datetime import datetime
 
 from memory_mcp.config import (
     RedisConfig,
-    FAISSConfig,
     SQLiteConfig,
     VaultConfig,
     EmbeddingConfig,
+    GraphitiConfig,
+    LivegrepConfig,
     MemoryConfig,
     get_config,
     set_config,
@@ -41,14 +42,20 @@ class TestDataclassDefaults:
         assert config.ttl_templates == 86400
         assert config.ttl_queries == 3600
 
-    def test_faiss_config_defaults(self):
-        """Test FAISSConfig has correct default values."""
-        config = FAISSConfig()
-        assert config.index_type == "flat"
-        assert config.dimension == 768
-        assert config.nlist == 100
-        assert config.nprobe == 10
-        assert config.rebuild_threshold == 0.1
+    def test_graphiti_config_defaults(self):
+        """Test GraphitiConfig has correct default values."""
+        config = GraphitiConfig()
+        assert config.uri == "bolt://localhost:7687"
+        assert config.user == "neo4j"
+        assert config.password is None
+        assert config.enabled is True
+
+    def test_livegrep_config_defaults(self):
+        """Test LivegrepConfig has correct default values."""
+        config = LivegrepConfig()
+        assert config.endpoint == "http://localhost:8910"
+        assert config.backend_port == 9999
+        assert config.enabled is True
 
     def test_sqlite_config_defaults(self):
         """Test SQLiteConfig has correct default values."""
@@ -76,12 +83,12 @@ class TestDataclassDefaults:
         """Test MemoryConfig has correct default values."""
         config = MemoryConfig()
         assert config.base_path == "~/.claude-code-pp"
-        assert config.faiss_path == "~/.claude-code-pp/memory/faiss"
         assert isinstance(config.redis, RedisConfig)
-        assert isinstance(config.faiss, FAISSConfig)
         assert isinstance(config.sqlite, SQLiteConfig)
         assert isinstance(config.vault, VaultConfig)
         assert isinstance(config.embedding, EmbeddingConfig)
+        assert isinstance(config.graphiti, GraphitiConfig)
+        assert isinstance(config.livegrep, LivegrepConfig)
 
 
 # ============================================================================
@@ -100,12 +107,15 @@ memory:
     port: 6380
     db: 1
     password: secret123
-  faiss:
-    index_type: ivf
-    rebuild_threshold: 0.2
+  graphiti:
+    uri: bolt://graphiti.example.com:7687
+    user: admin
+    enabled: true
+  livegrep:
+    endpoint: http://livegrep.example.com:8910
+    enabled: true
   paths:
     vault: /custom/vault
-    faiss: /custom/faiss
     database: /custom/db.sqlite
 embeddings:
   provider: openai
@@ -124,10 +134,12 @@ embeddings:
                 assert config.redis.port == 6380
                 assert config.redis.db == 1
                 assert config.redis.password == "secret123"
-                assert config.faiss.index_type == "ivf"
-                assert config.faiss.rebuild_threshold == 0.2
+                assert config.graphiti.uri == "bolt://graphiti.example.com:7687"
+                assert config.graphiti.user == "admin"
+                assert config.graphiti.enabled is True
+                assert config.livegrep.endpoint == "http://livegrep.example.com:8910"
+                assert config.livegrep.enabled is True
                 assert config.vault.path == "/custom/vault"
-                assert config.faiss_path == "/custom/faiss"
                 assert config.sqlite.path == "/custom/db.sqlite"
                 assert config.embedding.provider == "openai"
                 assert config.embedding.local_model == "custom-embed-model"
@@ -152,18 +164,19 @@ memory:
                 assert config.redis.host == "redis.local"
                 assert config.redis.port == 6380
                 # Other defaults should remain
-                assert config.faiss.index_type == "flat"
+                assert config.graphiti.uri == "bolt://localhost:7687"
                 assert config.embedding.provider == "local"
             finally:
                 os.unlink(f.name)
 
-    def test_load_partial_yaml_faiss_only(self):
-        """Test loading YAML with only FAISS section."""
+    def test_load_partial_yaml_graphiti_only(self):
+        """Test loading YAML with only Graphiti section."""
         yaml_content = """
 memory:
-  faiss:
-    index_type: hnsw
-    rebuild_threshold: 0.15
+  graphiti:
+    uri: bolt://custom:7687
+    user: admin
+    enabled: true
 """
         with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
             f.write(yaml_content)
@@ -171,8 +184,9 @@ memory:
 
             try:
                 config = MemoryConfig.from_yaml(f.name)
-                assert config.faiss.index_type == "hnsw"
-                assert config.faiss.rebuild_threshold == 0.15
+                assert config.graphiti.uri == "bolt://custom:7687"
+                assert config.graphiti.user == "admin"
+                assert config.graphiti.enabled is True
                 # Other defaults should remain
                 assert config.redis.host == "localhost"
             finally:
@@ -184,7 +198,6 @@ memory:
 memory:
   paths:
     vault: /tmp/vault
-    faiss: /tmp/faiss
     database: /tmp/db.sqlite
 """
         with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
@@ -194,7 +207,6 @@ memory:
             try:
                 config = MemoryConfig.from_yaml(f.name)
                 assert config.vault.path == "/tmp/vault"
-                assert config.faiss_path == "/tmp/faiss"
                 assert config.sqlite.path == "/tmp/db.sqlite"
             finally:
                 os.unlink(f.name)
@@ -224,7 +236,7 @@ embeddings:
         config = MemoryConfig.from_yaml("~/.nonexistent-config-file-12345.yaml")
         # Should return default config
         assert config.redis.host == "localhost"
-        assert config.faiss.index_type == "flat"
+        assert config.graphiti.uri == "bolt://localhost:7687"
         assert config.embedding.provider == "local"
 
     def test_load_empty_yaml_file(self):
@@ -236,7 +248,7 @@ embeddings:
             try:
                 config = MemoryConfig.from_yaml(f.name)
                 assert config.redis.host == "localhost"
-                assert config.faiss.index_type == "flat"
+                assert config.graphiti.uri == "bolt://localhost:7687"
             finally:
                 os.unlink(f.name)
 
@@ -322,7 +334,6 @@ memory:
 memory:
   paths:
     vault: ~/my-vault
-    faiss: ~/my-faiss
     database: ~/.cache/memory.db
 """
         with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
@@ -333,7 +344,6 @@ memory:
                 config = MemoryConfig.from_yaml(f.name)
                 # Paths should be stored as-is (not expanded yet)
                 assert config.vault.path == "~/my-vault"
-                assert config.faiss_path == "~/my-faiss"
                 assert config.sqlite.path == "~/.cache/memory.db"
             finally:
                 os.unlink(f.name)
@@ -351,13 +361,13 @@ memory:
             config = MemoryConfig.from_yaml(config_file)
             assert config.redis.host == "test"
 
-    def test_load_faiss_with_custom_rebuild_threshold(self):
-        """Test loading FAISS config with custom rebuild threshold."""
+    def test_load_livegrep_with_custom_endpoint(self):
+        """Test loading livegrep config with custom endpoint."""
         yaml_content = """
 memory:
-  faiss:
-    index_type: ivf
-    rebuild_threshold: 0.25
+  livegrep:
+    endpoint: http://custom-livegrep:9999
+    enabled: true
 """
         with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
             f.write(yaml_content)
@@ -365,7 +375,7 @@ memory:
 
             try:
                 config = MemoryConfig.from_yaml(f.name)
-                assert config.faiss.rebuild_threshold == 0.25
+                assert config.livegrep.endpoint == "http://custom-livegrep:9999"
             finally:
                 os.unlink(f.name)
 
@@ -447,8 +457,8 @@ memory:
   redis:
     host: redis-host
     port: 6380
-  faiss:
-    index_type: ivf
+  graphiti:
+    uri: bolt://custom:7687
   paths:
     vault: /vault
 embeddings:
@@ -462,7 +472,7 @@ embeddings:
                 config = MemoryConfig.from_yaml(f.name)
                 assert config.redis.host == "redis-host"
                 assert config.redis.port == 6380
-                assert config.faiss.index_type == "ivf"
+                assert config.graphiti.uri == "bolt://custom:7687"
                 assert config.vault.path == "/vault"
                 assert config.embedding.provider == "voyage"
             finally:
@@ -475,9 +485,8 @@ memory:
   redis:
     port: 6380
     db: 2
-  faiss:
-    nlist: 200
-    nprobe: 20
+  livegrep:
+    backend_port: 9998
 """
         with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
             f.write(yaml_content)
@@ -487,18 +496,16 @@ memory:
                 config = MemoryConfig.from_yaml(f.name)
                 assert config.redis.port == 6380
                 assert config.redis.db == 2
-                # FAISS nlist and nprobe are now parsed correctly
-                assert config.faiss.nlist == 200
-                assert config.faiss.nprobe == 20
+                assert config.livegrep.backend_port == 9998
             finally:
                 os.unlink(f.name)
 
-    def test_load_yaml_with_float_values(self):
-        """Test loading YAML with float configurations."""
+    def test_load_yaml_with_boolean_graphiti_enabled(self):
+        """Test loading YAML with boolean configurations."""
         yaml_content = """
 memory:
-  faiss:
-    rebuild_threshold: 0.35
+  graphiti:
+    enabled: false
 """
         with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
             f.write(yaml_content)
@@ -506,7 +513,7 @@ memory:
 
             try:
                 config = MemoryConfig.from_yaml(f.name)
-                assert config.faiss.rebuild_threshold == 0.35
+                assert config.graphiti.enabled is False
             finally:
                 os.unlink(f.name)
 
@@ -599,12 +606,12 @@ class TestPathOperations:
         assert not config.base_path.startswith("~")
         assert os.path.isabs(config.base_path)
 
-    def test_expand_paths_tilde_in_faiss_path(self):
-        """Test expand_paths expands tilde in faiss_path."""
+    def test_expand_paths_tilde_in_livegrep_paths(self):
+        """Test expand_paths expands tilde in livegrep paths."""
         config = MemoryConfig()
         config.expand_paths()
-        assert not config.faiss_path.startswith("~")
-        assert os.path.isabs(config.faiss_path)
+        assert not config.livegrep.index_path.startswith("~")
+        assert not config.livegrep.repos_path.startswith("~")
 
     def test_expand_paths_tilde_in_sqlite_path(self):
         """Test expand_paths expands tilde in sqlite.path."""
@@ -624,41 +631,44 @@ class TestPathOperations:
         """Test expand_paths with custom path values."""
         config = MemoryConfig()
         config.base_path = "~/custom/base"
-        config.faiss_path = "~/custom/faiss"
         config.sqlite.path = "~/custom/sqlite.db"
         config.vault.path = "~/custom/vault"
+        config.livegrep.index_path = "~/custom/livegrep.idx"
 
         config.expand_paths()
 
         assert not config.base_path.startswith("~")
-        assert not config.faiss_path.startswith("~")
         assert not config.sqlite.path.startswith("~")
         assert not config.vault.path.startswith("~")
+        assert not config.livegrep.index_path.startswith("~")
 
     def test_ensure_directories_creates_all_dirs(self):
         """Test ensure_directories creates all necessary directories."""
         with tempfile.TemporaryDirectory() as tmpdir:
             config = MemoryConfig()
             config.base_path = os.path.join(tmpdir, "base")
-            config.faiss_path = os.path.join(tmpdir, "faiss")
             config.sqlite.path = os.path.join(tmpdir, "subdir", "db.sqlite")
             config.vault.path = os.path.join(tmpdir, "vault")
+            config.livegrep.index_path = os.path.join(tmpdir, "livegrep", "index.idx")
+            config.livegrep.repos_path = os.path.join(tmpdir, "livegrep", "repos")
 
             config.ensure_directories()
 
             assert Path(config.base_path).exists()
-            assert Path(config.faiss_path).exists()
             assert Path(config.sqlite.path).parent.exists()
             assert Path(config.vault.path).exists()
+            assert Path(config.livegrep.index_path).parent.exists()
+            assert Path(config.livegrep.repos_path).exists()
 
     def test_ensure_directories_with_existing_dirs(self):
         """Test ensure_directories works with already-existing directories."""
         with tempfile.TemporaryDirectory() as tmpdir:
             config = MemoryConfig()
             config.base_path = tmpdir
-            config.faiss_path = tmpdir
             config.sqlite.path = os.path.join(tmpdir, "db.sqlite")
             config.vault.path = tmpdir
+            config.livegrep.index_path = os.path.join(tmpdir, "index.idx")
+            config.livegrep.repos_path = tmpdir
 
             # Should not raise error
             config.ensure_directories()
@@ -670,32 +680,33 @@ class TestPathOperations:
         with tempfile.TemporaryDirectory() as tmpdir:
             config = MemoryConfig()
             config.base_path = os.path.join(tmpdir, "a", "b", "c")
-            config.faiss_path = os.path.join(tmpdir, "x", "y", "z")
             config.sqlite.path = os.path.join(tmpdir, "p", "q", "r", "db.sqlite")
             config.vault.path = os.path.join(tmpdir, "m", "n")
+            config.livegrep.index_path = os.path.join(tmpdir, "x", "y", "index.idx")
+            config.livegrep.repos_path = os.path.join(tmpdir, "x", "y", "repos")
 
             config.ensure_directories()
 
             assert Path(config.base_path).exists()
-            assert Path(config.faiss_path).exists()
             assert Path(config.vault.path).exists()
+            assert Path(config.livegrep.repos_path).exists()
 
     def test_ensure_directories_calls_expand_paths(self):
         """Test ensure_directories calls expand_paths first."""
         config = MemoryConfig()
         config.base_path = "~/test-base"
-        config.faiss_path = "~/test-faiss"
         config.sqlite.path = "~/test-db.sqlite"
         config.vault.path = "~/test-vault"
+        config.livegrep.index_path = "~/test-livegrep/index.idx"
 
         with tempfile.TemporaryDirectory():
             config.ensure_directories()
 
             # All paths should be expanded
             assert not config.base_path.startswith("~")
-            assert not config.faiss_path.startswith("~")
             assert not config.sqlite.path.startswith("~")
             assert not config.vault.path.startswith("~")
+            assert not config.livegrep.index_path.startswith("~")
 
     def test_expand_paths_idempotent(self):
         """Test that expand_paths is idempotent."""
@@ -929,11 +940,11 @@ memory:
         original = get_config()
 
         new_config = MemoryConfig()
-        new_config.faiss.index_type = "hnsw"
+        new_config.graphiti.uri = "bolt://custom:7687"
         set_config(new_config)
 
         retrieved = get_config()
-        assert retrieved.faiss.index_type == "hnsw"
+        assert retrieved.graphiti.uri == "bolt://custom:7687"
 
         config_module._config = None
 
@@ -1041,12 +1052,12 @@ memory:
             finally:
                 os.unlink(f.name)
 
-    def test_faiss_config_with_invalid_rebuild_threshold(self):
-        """Test FAISS config with invalid rebuild threshold."""
+    def test_livegrep_config_with_invalid_port(self):
+        """Test livegrep config with invalid port value."""
         yaml_content = """
 memory:
-  faiss:
-    rebuild_threshold: invalid
+  livegrep:
+    backend_port: invalid
 """
         with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
             f.write(yaml_content)
@@ -1055,7 +1066,7 @@ memory:
             try:
                 config = MemoryConfig.from_yaml(f.name)
                 # Should preserve value from YAML even if type is wrong
-                assert config.faiss.rebuild_threshold == "invalid"
+                assert config.livegrep.backend_port == "invalid"
             finally:
                 os.unlink(f.name)
 
@@ -1117,12 +1128,13 @@ memory:
             finally:
                 os.unlink(f.name)
 
-    def test_faiss_config_missing_index_type_uses_default(self):
-        """Test FAISS config missing index_type uses default."""
+    def test_graphiti_config_missing_uri_uses_default(self):
+        """Test Graphiti config missing uri uses default."""
         yaml_content = """
 memory:
-  faiss:
-    rebuild_threshold: 0.2
+  graphiti:
+    user: admin
+    enabled: true
 """
         with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
             f.write(yaml_content)
@@ -1130,8 +1142,9 @@ memory:
 
             try:
                 config = MemoryConfig.from_yaml(f.name)
-                assert config.faiss.index_type == "flat"
-                assert config.faiss.rebuild_threshold == 0.2
+                assert config.graphiti.uri == "bolt://localhost:7687"
+                assert config.graphiti.user == "admin"
+                assert config.graphiti.enabled is True
             finally:
                 os.unlink(f.name)
 
@@ -1211,7 +1224,7 @@ memory:
         yaml_content = """
 memory:
   redis: {}
-  faiss: {}
+  graphiti: {}
   paths: {}
 """
         with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
@@ -1222,7 +1235,7 @@ memory:
                 config = MemoryConfig.from_yaml(f.name)
                 # Should use all defaults
                 assert config.redis.host == "localhost"
-                assert config.faiss.index_type == "flat"
+                assert config.graphiti.uri == "bolt://localhost:7687"
             finally:
                 os.unlink(f.name)
 
@@ -1242,7 +1255,6 @@ memory:
     host: custom-redis
   paths:
     vault: ~/test-vault
-    faiss: ~/test-faiss
     database: ~/.cache/test.db
 """
         with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
@@ -1258,21 +1270,22 @@ memory:
                 # Expand
                 config.expand_paths()
                 assert not config.vault.path.startswith("~")
-                assert not config.faiss_path.startswith("~")
+                assert not config.livegrep.index_path.startswith("~")
 
                 # Ensure (with temp directory)
                 import shutil
                 with tempfile.TemporaryDirectory() as tmpdir:
                     config.base_path = os.path.join(tmpdir, "base")
-                    config.faiss_path = os.path.join(tmpdir, "faiss")
                     config.vault.path = os.path.join(tmpdir, "vault")
                     config.sqlite.path = os.path.join(tmpdir, "db.sqlite")
+                    config.livegrep.index_path = os.path.join(tmpdir, "livegrep", "index.idx")
+                    config.livegrep.repos_path = os.path.join(tmpdir, "livegrep", "repos")
 
                     config.ensure_directories()
 
                     assert Path(config.base_path).exists()
-                    assert Path(config.faiss_path).exists()
                     assert Path(config.vault.path).exists()
+                    assert Path(config.livegrep.repos_path).exists()
             finally:
                 os.unlink(f.name)
 
@@ -1324,10 +1337,10 @@ memory:
 
         # Mutate
         retrieved = get_config()
-        retrieved.faiss.index_type = "hnsw"
+        retrieved.graphiti.uri = "bolt://custom:7687"
 
         # Should see mutation
-        assert get_config().faiss.index_type == "hnsw"
+        assert get_config().graphiti.uri == "bolt://custom:7687"
 
         config_module._config = None
 
@@ -1382,12 +1395,12 @@ memory:
 
         # Modify nested config
         config.redis.host = "modified-host"
-        config.faiss.index_type = "modified-type"
+        config.graphiti.uri = "bolt://modified:7687"
         config.vault.obsidian_compatible = False
 
         # Verify all modifications
         assert config.redis.host == "modified-host"
-        assert config.faiss.index_type == "modified-type"
+        assert config.graphiti.uri == "bolt://modified:7687"
         assert config.vault.obsidian_compatible is False
 
     def test_full_workflow_with_env_variable(self):

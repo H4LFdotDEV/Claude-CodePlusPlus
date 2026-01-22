@@ -1,7 +1,13 @@
 # Memory MCP Server for Claude Code++
 # Jeremiah Kroesche | Halfservers LLC
 #
-# Tiered memory system: Redis (hot) → FAISS (warm) → SQLite/Markdown (cold)
+# Tiered memory system:
+#   Hot:     Redis (session cache)
+#   Warm:    Graphiti/Neo4j (knowledge graph)
+#   Cold:    livegrep (artifact search)
+#   Archive: Obsidian vault (human-readable export)
+#
+# SQLite stores metadata only (timestamps, tags, indexes)
 
 __version__ = "1.0.0"
 __author__ = "Jeremiah Kroesche"
@@ -19,10 +25,14 @@ except ImportError:
     SessionState = None
 
 try:
-    from .faiss_manager import FAISSManager, SearchResult
+    from .graphiti_manager import GraphitiManager
 except ImportError:
-    FAISSManager = None
-    SearchResult = None
+    GraphitiManager = None
+
+try:
+    from .livegrep_client import LivegrepClient
+except ImportError:
+    LivegrepClient = None
 
 try:
     from .embedding_provider import (
@@ -47,11 +57,12 @@ __all__ = [
     "VaultManager",
     "VaultNote",
     "MemoryMCPServer",
-    # Optional
+    # Optional - Tiers
     "RedisClient",
     "SessionState",
-    "FAISSManager",
-    "SearchResult",
+    "GraphitiManager",
+    "LivegrepClient",
+    # Optional - Embeddings
     "EmbeddingProvider",
     "get_embedding_provider",
 ]
