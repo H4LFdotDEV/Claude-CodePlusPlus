@@ -1,0 +1,337 @@
+#!/bin/bash
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Configuration
+INSTALL_DIR="$HOME/.claude-code-pp"
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+echo -e "${BLUE}"
+echo "╔═══════════════════════════════════════════════════════════╗"
+echo "║                   Claude Code++ Installer                  ║"
+echo "║           Persistent Memory for Claude Code                ║"
+echo "╚═══════════════════════════════════════════════════════════╝"
+echo -e "${NC}"
+
+# Helper functions
+info() { echo -e "${BLUE}[INFO]${NC} $1"; }
+success() { echo -e "${GREEN}[OK]${NC} $1"; }
+warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
+error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
+
+# Check prerequisites
+check_prerequisites() {
+    info "Checking prerequisites..."
+
+    # Python
+    if command -v python3 &> /dev/null; then
+        PYTHON_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+        if python3 -c 'import sys; exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
+            success "Python $PYTHON_VERSION found"
+        else
+            error "Python 3.10+ required (found $PYTHON_VERSION)"
+        fi
+    else
+        error "Python 3 not found. Please install Python 3.10+"
+    fi
+
+    # Node.js (for npx)
+    if command -v node &> /dev/null; then
+        NODE_VERSION=$(node -v)
+        success "Node.js $NODE_VERSION found"
+    else
+        warn "Node.js not found. Some MCP servers (prompts) won't work"
+    fi
+
+    # pip
+    if command -v pip3 &> /dev/null || command -v pip &> /dev/null; then
+        success "pip found"
+    else
+        error "pip not found. Please install pip"
+    fi
+
+    # Claude Code
+    if command -v claude &> /dev/null; then
+        success "Claude Code CLI found"
+    else
+        warn "Claude Code CLI not found. Install from: https://docs.anthropic.com/claude-code"
+    fi
+}
+
+# Create directory structure
+create_directories() {
+    info "Creating directory structure..."
+
+    mkdir -p "$INSTALL_DIR"/{bin,config,logs,cache}
+    mkdir -p "$INSTALL_DIR"/memory/{sqlite,lancedb,vault/{code,notes,conversations,references,daily}}
+
+    success "Created $INSTALL_DIR"
+}
+
+# Install Python package
+install_python_package() {
+    info "Installing Python package..."
+
+    cd "$REPO_DIR/python"
+
+    # Determine pip command
+    if command -v pip3 &> /dev/null; then
+        PIP="pip3"
+    else
+        PIP="pip"
+    fi
+
+    # Check if we should install all extras
+    echo ""
+    echo "Installation options:"
+    echo "  1) Core only (SQLite, Vault) - minimal dependencies"
+    echo "  2) With Redis - adds hot caching"
+    echo "  3) With embeddings - adds semantic search"
+    echo "  4) Full install - all features (recommended)"
+    echo ""
+    read -p "Select option [4]: " install_option
+    install_option=${install_option:-4}
+
+    case $install_option in
+        1) $PIP install -e . ;;
+        2) $PIP install -e ".[redis]" ;;
+        3) $PIP install -e ".[embeddings]" ;;
+        4) $PIP install -e ".[all]" ;;
+        *) $PIP install -e ".[all]" ;;
+    esac
+
+    success "Python package installed"
+}
+
+# Configure Claude Code
+configure_claude() {
+    info "Configuring Claude Code..."
+
+    CLAUDE_CONFIG="$HOME/.claude.json"
+
+    # Backup existing config
+    if [ -f "$CLAUDE_CONFIG" ]; then
+        cp "$CLAUDE_CONFIG" "$CLAUDE_CONFIG.backup.$(date +%Y%m%d%H%M%S)"
+        info "Backed up existing config"
+    fi
+
+    # Check if config exists and has mcpServers
+    if [ -f "$CLAUDE_CONFIG" ]; then
+        if command -v jq &> /dev/null; then
+            # Use jq to merge configs
+            TEMP_CONFIG=$(mktemp)
+            jq '.mcpServers.memory = {
+                "command": "python3",
+                "args": ["-m", "memory_mcp.server"],
+                "env": {
+                    "SQLITE_PATH": "'"$INSTALL_DIR"'/memory/sqlite/memories.db",
+                    "OBSIDIAN_VAULT_PATH": "'"$INSTALL_DIR"'/memory/vault"
+                }
+            } | .mcpServers.prompts = {
+                "command": "npx",
+                "args": ["-y", "prompts.chat", "mcp"]
+            }' "$CLAUDE_CONFIG" > "$TEMP_CONFIG"
+            mv "$TEMP_CONFIG" "$CLAUDE_CONFIG"
+            success "Updated $CLAUDE_CONFIG with MCP servers"
+        else
+            warn "jq not found - please manually add MCP config to ~/.claude.json"
+            echo ""
+            echo "Add this to your ~/.claude.json mcpServers:"
+            echo '  "memory": {'
+            echo '    "command": "python3",'
+            echo '    "args": ["-m", "memory_mcp.server"],'
+            echo '    "env": {'
+            echo "      \"SQLITE_PATH\": \"$INSTALL_DIR/memory/sqlite/memories.db\","
+            echo "      \"OBSIDIAN_VAULT_PATH\": \"$INSTALL_DIR/memory/vault\""
+            echo '    }'
+            echo '  },'
+            echo '  "prompts": {'
+            echo '    "command": "npx",'
+            echo '    "args": ["-y", "prompts.chat", "mcp"]'
+            echo '  }'
+        fi
+    else
+        # Create new config
+        cat > "$CLAUDE_CONFIG" << EOF
+{
+  "mcpServers": {
+    "memory": {
+      "command": "python3",
+      "args": ["-m", "memory_mcp.server"],
+      "env": {
+        "SQLITE_PATH": "$INSTALL_DIR/memory/sqlite/memories.db",
+        "OBSIDIAN_VAULT_PATH": "$INSTALL_DIR/memory/vault"
+      }
+    },
+    "prompts": {
+      "command": "npx",
+      "args": ["-y", "prompts.chat", "mcp"]
+    }
+  }
+}
+EOF
+        success "Created $CLAUDE_CONFIG"
+    fi
+}
+
+# Copy rules and hooks
+copy_claude_extensions() {
+    info "Installing Claude Code extensions..."
+
+    CLAUDE_DIR="$HOME/.claude"
+    mkdir -p "$CLAUDE_DIR"/{rules,agents,commands,skills}
+
+    # Copy rules if they exist
+    if [ -d "$REPO_DIR/.claude/rules" ]; then
+        cp -r "$REPO_DIR/.claude/rules/"* "$CLAUDE_DIR/rules/" 2>/dev/null || true
+        success "Copied rules to $CLAUDE_DIR/rules/"
+    fi
+
+    # Copy agents if they exist
+    if [ -d "$REPO_DIR/.claude/agents" ]; then
+        cp -r "$REPO_DIR/.claude/agents/"* "$CLAUDE_DIR/agents/" 2>/dev/null || true
+        success "Copied agents to $CLAUDE_DIR/agents/"
+    fi
+
+    # Copy commands if they exist
+    if [ -d "$REPO_DIR/.claude/commands" ]; then
+        cp -r "$REPO_DIR/.claude/commands/"* "$CLAUDE_DIR/commands/" 2>/dev/null || true
+        success "Copied commands to $CLAUDE_DIR/commands/"
+    fi
+
+    # Copy skills if they exist
+    if [ -d "$REPO_DIR/.claude/skills" ]; then
+        cp -r "$REPO_DIR/.claude/skills/"* "$CLAUDE_DIR/skills/" 2>/dev/null || true
+        success "Copied skills to $CLAUDE_DIR/skills/"
+    fi
+}
+
+# Optional: Setup Redis
+setup_redis() {
+    echo ""
+    read -p "Would you like to install/start Redis for hot caching? [y/N]: " setup_redis
+
+    if [[ "$setup_redis" =~ ^[Yy]$ ]]; then
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS
+            if command -v brew &> /dev/null; then
+                if ! brew list redis &> /dev/null; then
+                    info "Installing Redis via Homebrew..."
+                    brew install redis
+                fi
+                info "Starting Redis..."
+                brew services start redis
+                success "Redis started"
+            else
+                warn "Homebrew not found. Please install Redis manually"
+            fi
+        elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+            # Linux
+            if command -v apt-get &> /dev/null; then
+                info "Installing Redis..."
+                sudo apt-get update && sudo apt-get install -y redis-server
+                sudo systemctl start redis-server
+                sudo systemctl enable redis-server
+                success "Redis installed and started"
+            elif command -v docker &> /dev/null; then
+                info "Starting Redis via Docker..."
+                docker run -d --name redis -p 6379:6379 redis:alpine
+                success "Redis container started"
+            else
+                warn "Please install Redis manually"
+            fi
+        fi
+    fi
+}
+
+# Verify installation
+verify_installation() {
+    info "Verifying installation..."
+    echo ""
+
+    # Check Python module
+    if python3 -c "import memory_mcp" 2>/dev/null; then
+        success "memory_mcp module importable"
+    else
+        warn "memory_mcp module not found in Python path"
+    fi
+
+    # Check Redis
+    if command -v redis-cli &> /dev/null && redis-cli ping &> /dev/null; then
+        success "Redis is running"
+    else
+        warn "Redis not available (optional)"
+    fi
+
+    # Check directories
+    if [ -d "$INSTALL_DIR/memory/sqlite" ]; then
+        success "Directory structure created"
+    else
+        warn "Directory structure incomplete"
+    fi
+
+    # Check Claude config
+    if [ -f "$HOME/.claude.json" ] && grep -q "memory_mcp" "$HOME/.claude.json" 2>/dev/null; then
+        success "Claude Code configured"
+    else
+        warn "Claude Code configuration may need manual setup"
+    fi
+}
+
+# Print summary
+print_summary() {
+    echo ""
+    echo -e "${GREEN}"
+    echo "╔═══════════════════════════════════════════════════════════╗"
+    echo "║              Installation Complete!                        ║"
+    echo "╚═══════════════════════════════════════════════════════════╝"
+    echo -e "${NC}"
+    echo ""
+    echo "Installation directory: $INSTALL_DIR"
+    echo ""
+    echo "Next steps:"
+    echo "  1. Restart Claude Code (or open a new terminal)"
+    echo "  2. Run 'memory_stats' to verify the Memory MCP is working"
+    echo "  3. Try 'memory_store' to save your first memory"
+    echo ""
+    echo "Documentation: https://github.com/H4LFdotDEV/Claude-CodePlusPlus/wiki"
+    echo ""
+    echo "Optional:"
+    echo "  - Start Redis for faster caching: brew services start redis"
+    echo "  - Start Docker services: cd docker && docker-compose up -d"
+    echo ""
+}
+
+# Main installation flow
+main() {
+    check_prerequisites
+    echo ""
+
+    create_directories
+    echo ""
+
+    install_python_package
+    echo ""
+
+    configure_claude
+    echo ""
+
+    copy_claude_extensions
+    echo ""
+
+    setup_redis
+    echo ""
+
+    verify_installation
+
+    print_summary
+}
+
+# Run installer
+main "$@"
