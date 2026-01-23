@@ -15,6 +15,9 @@
 
 ### Extensions
 - [[Prompts-MCP]]
+- [[System-Controller]]
 
 ### Reference
+- [[API-Reference]]
+- [[Development]]
 - [[Troubleshooting]]
