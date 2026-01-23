@@ -25,6 +25,8 @@ classifiers = [
 
 dependencies = [
     "pyyaml>=6.0",
+    "pydantic>=2.0",
+    "mcp>=1.0.0",
 ]
 
 [project.optional-dependencies]
@@ -48,8 +50,8 @@ dev = [
 memory-mcp = "memory_mcp.server:main"
 
 [project.urls]
-Homepage = "https://github.com/jeremiah/claude-code-pp"
-Documentation = "https://github.com/jeremiah/claude-code-pp#readme"
+Homepage = "https://github.com/H4LFdotDEV/Claude-CodePlusPlus"
+Documentation = "https://github.com/H4LFdotDEV/Claude-CodePlusPlus/wiki"
 
 [tool.setuptools.packages.find]
 where = ["."]
