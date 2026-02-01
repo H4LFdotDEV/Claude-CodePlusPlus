@@ -1,0 +1,87 @@
+{
+  "nameShort": "CAIIDE++",
+  "nameLong": "CAIIDE++ - Claude AI IDE",
+  "applicationName": "caiide",
+  "dataFolderName": ".caiide",
+  "win32MutexName": "caiide",
+  "licenseName": "MIT",
+  "licenseUrl": "https://github.com/halfservers/caiide/blob/main/LICENSE",
+  "serverLicenseUrl": "https://github.com/halfservers/caiide/blob/main/LICENSE",
+  "serverGreeting": [],
+  "serverLicense": [],
+  "serverLicensePrompt": "",
+  "win32DirName": "CAIIDE++",
+  "win32NameVersion": "CAIIDE++",
+  "win32RegValueName": "CAIIDEpp",
+  "win32AppId": "{{F8A0E3A5-8C4D-4B2F-9A1E-6C7D8B3F5E2A}",
+  "win32x64AppId": "{{F8A0E3A5-8C4D-4B2F-9A1E-6C7D8B3F5E2B}",
+  "win32arm64AppId": "{{F8A0E3A5-8C4D-4B2F-9A1E-6C7D8B3F5E2C}",
+  "win32UserAppId": "{{F8A0E3A5-8C4D-4B2F-9A1E-6C7D8B3F5E2D}",
+  "win32x64UserAppId": "{{F8A0E3A5-8C4D-4B2F-9A1E-6C7D8B3F5E2E}",
+  "win32arm64UserAppId": "{{F8A0E3A5-8C4D-4B2F-9A1E-6C7D8B3F5E2F}",
+  "win32AppUserModelId": "Halfservers.CAIIDEpp",
+  "win32ShellNameShort": "CAIIDE++",
+  "darwinBundleIdentifier": "com.halfservers.caiide",
+  "linuxIconName": "caiide",
+  "reportIssueUrl": "https://github.com/halfservers/caiide/issues/new",
+  "urlProtocol": "caiide",
+  "webviewContentExternalBaseUrlTemplate": "",
+  "quality": "stable",
+  "extensionsGallery": {
+    "serviceUrl": "https://open-vsx.org/vscode/gallery",
+    "itemUrl": "https://open-vsx.org/vscode/item",
+    "resourceUrlTemplate": "https://open-vsx.org/vscode/asset/{publisher}/{name}/{version}/Microsoft.VisualStudio.Code.WebResources/{path}",
+    "controlUrl": "",
+    "nlsBaseUrl": "",
+    "publisherUrl": ""
+  },
+  "linkProtectionTrustedDomains": [
+    "https://open-vsx.org",
+    "https://*.open-vsx.org",
+    "https://github.com",
+    "https://*.github.com",
+    "https://anthropic.com",
+    "https://*.anthropic.com"
+  ],
+  "sendASmile": {
+    "reportIssueUrl": "https://github.com/halfservers/caiide/issues/new",
+    "requestFeatureUrl": "https://github.com/halfservers/caiide/issues/new?labels=feature-request"
+  },
+  "documentationUrl": "https://github.com/halfservers/caiide",
+  "releaseNotesUrl": "https://github.com/halfservers/caiide/releases",
+  "keyboardShortcutsUrlMac": "https://github.com/halfservers/caiide/blob/main/docs/keybindings-mac.pdf",
+  "keyboardShortcutsUrlLinux": "https://github.com/halfservers/caiide/blob/main/docs/keybindings-linux.pdf",
+  "keyboardShortcutsUrlWin": "https://github.com/halfservers/caiide/blob/main/docs/keybindings-windows.pdf",
+  "introductoryVideosUrl": "",
+  "tipsAndTricksUrl": "",
+  "twitterUrl": "",
+  "requestFeatureUrl": "https://github.com/halfservers/caiide/issues/new?labels=feature-request",
+  "privacyStatementUrl": "https://github.com/halfservers/caiide/blob/main/PRIVACY.md",
+  "showTelemetryOptOutBanner": false,
+  "aiConfig": {
+    "ariaKey": ""
+  },
+  "enableTelemetry": false,
+  "extensionAllowedProposedApi": [
+    "caiide.caiide-memory",
+    "caiide.caiide-theme"
+  ],
+  "builtInExtensions": [
+    {
+      "name": "caiide-memory",
+      "version": "0.1.0",
+      "repo": "local"
+    },
+    {
+      "name": "caiide-theme",
+      "version": "0.1.0",
+      "repo": "local"
+    }
+  ],
+  "commonExtensionUrlTemplate": "",
+  "extensionUrlTemplate": "",
+  "extensionKeywords": [],
+  "commit": "",
+  "date": "",
+  "checksums": {}
+}

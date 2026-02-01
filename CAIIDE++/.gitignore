@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Build outputs
+out/
+dist/
+build/
+*.vsix
+
+# VS Code base (cloned separately)
+vscode-base/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE settings
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Optional npm cache
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Yarn
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*

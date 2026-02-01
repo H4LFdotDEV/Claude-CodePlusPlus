@@ -1,0 +1,44 @@
+diff --git a/src/vs/platform/telemetry/browser/telemetryService.ts b/src/vs/platform/telemetry/browser/telemetryService.ts
+--- a/src/vs/platform/telemetry/browser/telemetryService.ts
++++ b/src/vs/platform/telemetry/browser/telemetryService.ts
+@@ -1,5 +1,6 @@
+ // CAIIDE++: Telemetry completely disabled
++// This file has been patched to disable all telemetry collection
+
+ export class TelemetryService {
+     private readonly _telemetryLevel = 0; // OFF
+@@ -10,6 +11,10 @@ export class TelemetryService {
+     publicLogError2() { /* disabled */ }
+     setExperimentProperty() { /* disabled */ }
+     get telemetryLevel() { return 0; }
++
++    // CAIIDE++: All telemetry methods are no-ops
++    sendTelemetryEvent() { /* disabled */ }
++    sendTelemetryErrorEvent() { /* disabled */ }
+ }
+
+diff --git a/src/vs/workbench/contrib/telemetry/browser/telemetry.contribution.ts b/src/vs/workbench/contrib/telemetry/browser/telemetry.contribution.ts
+--- a/src/vs/workbench/contrib/telemetry/browser/telemetry.contribution.ts
++++ b/src/vs/workbench/contrib/telemetry/browser/telemetry.contribution.ts
+@@ -1,5 +1,6 @@
+ // CAIIDE++: Telemetry contribution disabled
++// This module has been stubbed out
+
+-// Original telemetry contribution code removed
+-export {}; // Empty export, telemetry not registered
++// Empty export - no telemetry contributions registered
++export {};
+
+diff --git a/product.json b/product.json
+--- a/product.json
++++ b/product.json
+@@ -1,6 +1,7 @@
+ {
++    "enableTelemetry": false,
++    "showTelemetryOptOutBanner": false,
++    "aiConfig": { "ariaKey": "" },
+     "extensionsGallery": {
+         "serviceUrl": "https://open-vsx.org/vscode/gallery",
+         "itemUrl": "https://open-vsx.org/vscode/item"
+     }
+ }

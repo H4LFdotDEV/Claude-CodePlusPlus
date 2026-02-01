@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <!-- Placeholder Logo for CAIIDE++ -->
+  <!-- Replace with actual logo -->
+
+  <!-- Background circle -->
+  <circle cx="64" cy="64" r="60" fill="#1e1e2e"/>
+
+  <!-- Outer ring -->
+  <circle cx="64" cy="64" r="56" fill="none" stroke="#d4a574" stroke-width="3"/>
+
+  <!-- C shape -->
+  <path d="M 80 40
+           A 30 30 0 1 0 80 88"
+        fill="none"
+        stroke="#d4a574"
+        stroke-width="8"
+        stroke-linecap="round"/>
+
+  <!-- ++ symbols -->
+  <g fill="#d4a574">
+    <!-- First + -->
+    <rect x="88" y="52" width="16" height="4" rx="2"/>
+    <rect x="94" y="46" width="4" height="16" rx="2"/>
+
+    <!-- Second + -->
+    <rect x="100" y="64" width="12" height="3" rx="1.5"/>
+    <rect x="104.5" y="59.5" width="3" height="12" rx="1.5"/>
+  </g>
+
+  <!-- Memory tier dots -->
+  <g>
+    <!-- Hot (red) -->
+    <circle cx="44" cy="50" r="4" fill="#ff6b6b"/>
+    <!-- Warm (yellow) -->
+    <circle cx="38" cy="64" r="4" fill="#feca57"/>
+    <!-- Cold (blue) -->
+    <circle cx="44" cy="78" r="4" fill="#48dbfb"/>
+    <!-- Archive (purple) -->
+    <circle cx="56" cy="86" r="4" fill="#a29bfe"/>
+  </g>
+</svg>

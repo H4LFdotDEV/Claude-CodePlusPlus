@@ -1,0 +1,34 @@
+{
+  "name": "caiide-theme",
+  "displayName": "CAIIDE++ Theme",
+  "description": "Claude-inspired theme for CAIIDE++ - warm, elegant, and easy on the eyes",
+  "version": "0.1.0",
+  "publisher": "halfservers",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Themes"
+  ],
+  "contributes": {
+    "themes": [
+      {
+        "label": "CAIIDE++ Light",
+        "uiTheme": "vs",
+        "path": "./themes/caiide-light.json"
+      },
+      {
+        "label": "CAIIDE++ Dark",
+        "uiTheme": "vs-dark",
+        "path": "./themes/caiide-dark.json"
+      }
+    ]
+  },
+  "keywords": [
+    "theme",
+    "claude",
+    "caiide",
+    "warm",
+    "elegant"
+  ]
+}

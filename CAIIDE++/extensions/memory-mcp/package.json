@@ -1,0 +1,152 @@
+{
+  "name": "caiide-memory",
+  "displayName": "CAIIDE++ Memory",
+  "description": "Persistent memory integration for CAIIDE++ via Memory MCP",
+  "version": "0.1.0",
+  "publisher": "halfservers",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "caiide-memory.search",
+        "title": "Search Memory",
+        "icon": "$(search)",
+        "category": "Memory"
+      },
+      {
+        "command": "caiide-memory.store",
+        "title": "Store Selection to Memory",
+        "icon": "$(add)",
+        "category": "Memory"
+      },
+      {
+        "command": "caiide-memory.storeFile",
+        "title": "Store Current File to Memory",
+        "icon": "$(file-add)",
+        "category": "Memory"
+      },
+      {
+        "command": "caiide-memory.refresh",
+        "title": "Refresh Memory",
+        "icon": "$(refresh)",
+        "category": "Memory"
+      },
+      {
+        "command": "caiide-memory.stats",
+        "title": "Memory Statistics",
+        "icon": "$(graph)",
+        "category": "Memory"
+      },
+      {
+        "command": "caiide-memory.connect",
+        "title": "Connect to Memory Server",
+        "category": "Memory"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "caiide-memory",
+          "title": "Memory",
+          "icon": "$(database)"
+        }
+      ]
+    },
+    "views": {
+      "caiide-memory": [
+        {
+          "id": "memorySearch",
+          "name": "Search",
+          "type": "webview"
+        },
+        {
+          "id": "memoryRecent",
+          "name": "Recent",
+          "type": "tree"
+        },
+        {
+          "id": "memoryStats",
+          "name": "Statistics",
+          "type": "tree"
+        }
+      ]
+    },
+    "menus": {
+      "editor/context": [
+        {
+          "command": "caiide-memory.store",
+          "when": "editorHasSelection",
+          "group": "caiide"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "caiide-memory.refresh",
+          "when": "view == memoryRecent",
+          "group": "navigation"
+        },
+        {
+          "command": "caiide-memory.search",
+          "when": "view == memorySearch",
+          "group": "navigation"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "caiide-memory.search",
+        "key": "ctrl+shift+m",
+        "mac": "cmd+shift+m"
+      },
+      {
+        "command": "caiide-memory.store",
+        "key": "ctrl+shift+s",
+        "mac": "cmd+shift+s",
+        "when": "editorHasSelection"
+      }
+    ],
+    "configuration": {
+      "title": "CAIIDE++ Memory",
+      "properties": {
+        "caiide-memory.serverCommand": {
+          "type": "string",
+          "default": "python -m memory_mcp.server",
+          "description": "Command to start the Memory MCP server"
+        },
+        "caiide-memory.autoConnect": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically connect to Memory server on startup"
+        },
+        "caiide-memory.defaultTags": {
+          "type": "array",
+          "default": [],
+          "description": "Default tags to add to stored memories"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "eslint": "^8.54.0",
+    "typescript": "^5.3.0"
+  }
+}
