@@ -146,7 +146,7 @@ class TestLocalBackupStrategyBackup:
         local_backup_strategy.config.compress = False  # Disable compression
         sample_metadata.source_paths = {
             "sqlite": temp_source_dir["sqlite"],
-            "faiss": temp_source_dir["vault"]
+            "vault": temp_source_dir["vault"]
         }
 
         result = local_backup_strategy.backup(sample_metadata)

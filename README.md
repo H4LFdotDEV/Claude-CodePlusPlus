@@ -6,8 +6,8 @@ An AI-native development environment that extends Claude Code with persistent me
 
 Claude Code++ adds enterprise-grade capabilities to Claude Code through MCP (Model Context Protocol) servers:
 
-- **Memory MCP** - Four-tier persistent memory (Redis → Graphiti → livegrep → Obsidian)
-- **Search MCP** - Multi-layer search (Hound → livegrep → Graphiti → Semantic)
+- **Memory MCP** - Four-tier persistent memory (Redis → Graphiti → SQLite → Obsidian)
+- **Search MCP** - Multi-layer search (SQLite FTS → livegrep → Graphiti)
 - **System Controller** - macOS Accessibility API integration
 - **Research Environment** - Voice conversations + webcam whiteboard capture
 - **Infrastructure** - Docker-based services for Redis, Neo4j, and model routing
@@ -243,10 +243,10 @@ See [wiki/Research-Environment.md](wiki/Research-Environment.md) for full docume
 
 ## Roadmap
 
-- [ ] Hound integration for project-local search
-- [ ] Semantic search layer (Nomic Embed + LanceDB)
-- [ ] Search MCP server (separate from Memory MCP)
+- [ ] Semantic search layer (intent-based queries)
 - [ ] Windows/Linux System Controller
+- [ ] CAIIDE++ VS Code fork integration
+- [ ] Voice mode improvements
 
 ## License
 

@@ -6,7 +6,7 @@
       "env": {
         "CLAUDE_CODE_PP_CONFIG": "~/.claude-code-pp/config/settings.yaml"
       },
-      "description": "Claude Code++ Memory System - tiered memory with Redis, FAISS, SQLite, and Obsidian vault"
+      "description": "Claude Code++ Memory System - tiered memory with Redis, Graphiti/Neo4j, SQLite, and Obsidian vault"
     },
     "claude-code-pp-system": {
       "command": "${HOME}/.claude-code-pp/bin/system-controller",

@@ -279,11 +279,11 @@ class TestCLIHealth:
                         "sqlite": True,
                         "vault": True,
                         "redis": True,
-                        "faiss": True,
+                        "graphiti": True,
                         "embedder": True
                     },
                     "redis": {"cache_hits": 50, "cache_misses": 5},
-                    "faiss": {"total_vectors": 1000},
+                    "graphiti": {"entities": 500, "relationships": 1200},
                     "embedder": {"provider": "local/test"}
                 }),
                 "type": "text"

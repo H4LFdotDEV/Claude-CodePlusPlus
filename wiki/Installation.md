@@ -59,7 +59,7 @@ Install options:
 ### Step 3: Create Directory Structure
 
 ```bash
-mkdir -p ~/.claude-code-pp/{config,memory/{sqlite,lancedb,vault},logs,cache}
+mkdir -p ~/.claude-code-pp/{config,memory/{sqlite,vault},logs,cache}
 ```
 
 ### Step 4: Build Memory MCP Binary
@@ -131,8 +131,8 @@ docker-compose up -d
 ```
 
 This starts:
-- Redis (port 6379)
-- ChromaDB (port 8000) - Vector embeddings
+- Redis (port 6379) - Hot cache
+- Neo4j (port 7474/7687) - Knowledge graph
 - LiteLLM (port 4000) - Model routing
 
 With optional profiles:

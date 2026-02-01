@@ -96,7 +96,6 @@ MCP servers are configured in `~/.claude.json`:
 |----------|---------|-------------|
 | `SQLITE_PATH` | `~/.claude-code-pp/memory/sqlite/memories.db` | SQLite database path |
 | `OBSIDIAN_VAULT_PATH` | `~/.claude-code-pp/memory/vault` | Vault directory |
-| `LANCEDB_PATH` | `~/.claude-code-pp/memory/lancedb` | LanceDB directory |
 
 ### Redis
 
@@ -146,7 +145,6 @@ Default directory layout:
 ├── memory/
 │   ├── sqlite/
 │   │   └── memories.db     # SQLite database
-│   ├── lancedb/            # Vector embeddings
 │   └── vault/              # Obsidian-compatible notes
 │       ├── code/
 │       ├── notes/

@@ -393,7 +393,7 @@ class SQLiteIndex:
             return [MemoryDocument.from_row(row) for row in cursor.fetchall()]
 
     def get_by_embedding_ids(self, embedding_ids: List[str]) -> List[MemoryDocument]:
-        """Get documents by their embedding IDs (for FAISS result lookup)."""
+        """Get documents by their embedding IDs (for semantic search result lookup)."""
         if not embedding_ids:
             return []
         placeholders = ",".join("?" * len(embedding_ids))

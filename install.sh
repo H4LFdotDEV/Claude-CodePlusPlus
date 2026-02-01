@@ -202,7 +202,7 @@ create_directories() {
     info "Creating directory structure..."
 
     mkdir -p "$INSTALL_DIR"/{bin,config,logs,cache}
-    mkdir -p "$INSTALL_DIR"/memory/{sqlite,lancedb,vault/{code,notes,conversations,references,daily}}
+    mkdir -p "$INSTALL_DIR"/memory/{sqlite,vault/{code,notes,conversations,references,daily}}
 
     success "Created $INSTALL_DIR"
 }

@@ -32,12 +32,11 @@ npm install -g @usebruno/cli
 Since Memory MCP uses stdio, you'll need an HTTP bridge for Bruno testing:
 
 ```bash
-# Option 1: Use the MCP Inspector (recommended for debugging)
+# Use the MCP Inspector (recommended)
 npx @modelcontextprotocol/inspector python -m memory_mcp.server
-
-# Option 2: Custom HTTP bridge (if implemented)
-python -m memory_mcp.http_bridge --port 8080
 ```
+
+This opens an inspector UI at http://localhost:5173 with an MCP endpoint for testing.
 
 ### 3. Configure Environment
 

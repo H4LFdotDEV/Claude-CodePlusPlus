@@ -252,13 +252,7 @@ redis-cli CONFIG SET maxmemory 256mb
 redis-cli CONFIG SET maxmemory-policy allkeys-lru
 ```
 
-2. **Clear old embeddings:**
-```bash
-# Remove stale LanceDB data
-rm -rf ~/.claude-code-pp/memory/lancedb/*
-```
-
-3. **Vacuum SQLite:**
+2. **Vacuum SQLite:**
 ```bash
 sqlite3 ~/.claude-code-pp/memory/sqlite/memories.db "VACUUM;"
 ```
@@ -334,12 +328,6 @@ rm ~/.claude-code-pp/memory/sqlite/memories.db
 redis-cli FLUSHDB
 ```
 
-### Reset Embeddings
-
-```bash
-rm -rf ~/.claude-code-pp/memory/lancedb/*
-```
-
 ### Full Reset
 
 ```bash
@@ -348,7 +336,7 @@ cp -r ~/.claude-code-pp ~/.claude-code-pp.backup
 
 # Reset
 rm -rf ~/.claude-code-pp/memory/*
-mkdir -p ~/.claude-code-pp/memory/{sqlite,lancedb,vault}
+mkdir -p ~/.claude-code-pp/memory/{sqlite,vault}
 ```
 
 ## Getting Help

@@ -8,6 +8,10 @@ If you discover a security vulnerability in Claude Code++, please report it resp
 2. Email security concerns to the maintainers directly
 3. Include details about the vulnerability and steps to reproduce
 
+## Security Contact
+
+Email: jeremiahk@halfservers.com
+
 ## Security Measures
 
 Claude Code++ implements several security measures:

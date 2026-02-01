@@ -56,20 +56,21 @@ memory:
   # Storage paths
   paths:
     vault: "~/.claude-code-pp/memory/vault"
-    faiss: "~/.claude-code-pp/memory/faiss"
     database: "~/.claude-code-pp/memory/metadata.db"
-  
+
   # Hot layer (Redis)
   redis:
     enabled: true
     host: "localhost"
     port: 6379
     db: 0
-  
-  # Warm layer (FAISS)
-  faiss:
-    index_type: "flat"  # flat | ivf | hnsw
-    rebuild_threshold: 0.1
+
+  # Warm layer (Graphiti/Neo4j)
+  graphiti:
+    enabled: true
+    neo4j_uri: "bolt://localhost:7687"
+    neo4j_user: "neo4j"
+    # neo4j_password: set via NEO4J_PASSWORD env var
   
   # Auto-memory triggers
   auto_store:

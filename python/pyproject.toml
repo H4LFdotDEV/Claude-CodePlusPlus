@@ -86,6 +86,7 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 markers = [
     "integration: marks tests as integration tests (require services)",
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
 ]
 
 [tool.mypy]

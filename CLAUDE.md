@@ -17,7 +17,7 @@ An AI-native development environment that extends Claude Code with persistent me
 ├─────────────────────────────────────────────────────────────┤
 │  Infrastructure                                              │
 │  ├── Redis - Hot memory cache (port 6379)                   │
-│  ├── ChromaDB - Vector embeddings (port 8000)               │
+│  ├── Neo4j - Knowledge graph (port 7687)                    │
 │  └── LiteLLM - Model routing (port 4000)                    │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -241,7 +241,7 @@ docker-compose -f docker/docker-compose.yaml --profile local-llm up -d
 | Service | Port | Purpose |
 |---------|------|---------|
 | redis | 6379 | Hot memory cache |
-| chromadb | 8000 | Vector embeddings |
+| neo4j | 7474/7687 | Knowledge graph (HTTP/Bolt) |
 | litellm | 4000 | Model routing |
 | playwright | 9222 | Browser automation (optional) |
 | ollama | 11434 | Local LLM (optional) |
