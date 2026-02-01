@@ -54,3 +54,6 @@ Archive.zip
 .claude/rules/
 .claude/skills/
 .claude/hooks.json
+
+# Reference repositories (not tracked)
+openclaw/

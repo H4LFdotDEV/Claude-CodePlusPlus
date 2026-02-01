@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "memory-mcp"
 version = "1.0.0"
-description = "Memory MCP Server for Claude Code++ - Tiered memory system with Redis, FAISS, SQLite, and Obsidian vault"
+description = "Memory MCP Server for Claude Code++ - Tiered memory system with Redis, Graphiti, SQLite, and Obsidian vault"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
@@ -30,20 +30,34 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Hot tier - Redis caching
 redis = ["redis>=4.0"]
-faiss = ["faiss-cpu>=1.7"]
+
+# Warm tier - Graphiti knowledge graph (requires Neo4j)
+graphiti = [
+    "graphiti-core>=0.5",
+    "neo4j>=5.0",
+]
+
+# Embeddings for semantic search
 embeddings = ["httpx>=0.24"]
+
+# All optional dependencies for full installation
 all = [
     "redis>=4.0",
-    "faiss-cpu>=1.7",
+    "graphiti-core>=0.5",
+    "neo4j>=5.0",
     "httpx>=0.24",
-    "numpy>=1.24",
 ]
+
+# Development dependencies
 dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21",
+    "pytest-cov>=4.0",
     "black>=23.0",
     "ruff>=0.1",
+    "mypy>=1.0",
 ]
 
 [project.scripts]
