@@ -43,7 +43,7 @@ class TestTierFlow:
         result = mcp_server.handle_call_tool("memory_store", {
             "content": "def tier_test():\n    return 'archive tier'",
             "type": "code",
-            "source": "tier-test/code.py",
+            "source": "tier_archive_test.py",
             "language": "python",
             "tags": ["tier-test"]
         })
@@ -51,8 +51,9 @@ class TestTierFlow:
         assert result.get("isError") is not True
 
         # Verify vault has the code
+        # Vault sanitizes filename to stem, so "tier_archive_test.py" -> "code/tier_archive_test.md"
         vault_result = mcp_server.handle_call_tool("vault_read", {
-            "path": "code/tier-test/code.py"
+            "path": "code/tier_archive_test"
         })
         vault_data = json.loads(vault_result["content"][0]["text"])
         assert vault_data["found"] is True
@@ -161,8 +162,9 @@ class TestTierGracefulDegradation:
     def test_session_fallback_to_sqlite(self, mcp_server):
         """Test session operations fallback to SQLite when Redis unavailable."""
         # Save session (will use SQLite fallback)
+        # Use relative path - absolute paths are not allowed by validation
         save_result = mcp_server.handle_call_tool("session_save", {
-            "project_path": "/test/fallback/project",
+            "project_path": "test/fallback/project",
             "active_files": ["file1.py", "file2.py"]
         })
 
@@ -182,9 +184,9 @@ class TestTierGracefulDegradation:
 
     def test_list_sessions_without_id(self, mcp_server):
         """Test listing sessions without providing session_id."""
-        # First save a session
+        # First save a session (use relative path - absolute paths not allowed)
         mcp_server.handle_call_tool("session_save", {
-            "project_path": "/test/list/project",
+            "project_path": "test/list/project",
             "active_files": []
         })
 
