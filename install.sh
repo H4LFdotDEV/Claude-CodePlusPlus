@@ -7,6 +7,8 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
+BOLD='\033[1m'
+DIM='\033[2m'
 NC='\033[0m' # No Color
 
 # Configuration
@@ -20,8 +22,12 @@ IS_REMOTE_INSTALL="${CAIIDE_REMOTE_INSTALL:-false}"
 DETECTED_OS="${CAIIDE_OS:-}"
 DETECTED_ARCH="${CAIIDE_ARCH:-}"
 
+# Command-line flags
+QUICK_MODE="${CAIIDE_QUICK_MODE:-false}"
+YES_MODE="${CAIIDE_YES_MODE:-false}"
+
 # Profile and resource variables (populated by detect_resources)
-PROFILE=""
+PROFILE="${CAIIDE_PROFILE:-}"
 RAM_GB=""
 CPU_CORES=""
 DISK_GB=""
@@ -32,6 +38,63 @@ DOCKER_RUNNING=""
 # Docker container name prefix (matches docker-compose.yaml)
 CONTAINER_PREFIX="claude-code-pp"
 
+# Progress tracking
+TOTAL_STEPS=10
+CURRENT_STEP=0
+
+# Parse command-line arguments
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --quick|-q)
+                QUICK_MODE="true"
+                YES_MODE="true"
+                shift
+                ;;
+            --yes|-y)
+                YES_MODE="true"
+                shift
+                ;;
+            --profile)
+                PROFILE="$2"
+                shift 2
+                ;;
+            --with-openclaw)
+                SETUP_OPENCLAW="true"
+                shift
+                ;;
+            --help|-h)
+                show_help
+                exit 0
+                ;;
+            *)
+                warn "Unknown option: $1"
+                shift
+                ;;
+        esac
+    done
+}
+
+show_help() {
+    echo "Claude Code++ Installer"
+    echo ""
+    echo "Usage: ./install.sh [options]"
+    echo ""
+    echo "Options:"
+    echo "  --quick, -q          Use all defaults, minimal prompts"
+    echo "  --yes, -y            Auto-accept all prompts"
+    echo "  --profile <name>     Set profile (minimal/standard/full/enterprise)"
+    echo "  --with-openclaw      Include OpenClaw multi-channel gateway"
+    echo "  --help, -h           Show this help message"
+    echo ""
+    echo "Examples:"
+    echo "  ./install.sh                    # Interactive installation"
+    echo "  ./install.sh --quick            # Fast install with defaults"
+    echo "  ./install.sh --profile full     # Install with full profile"
+    echo "  ./install.sh --with-openclaw    # Include OpenClaw"
+    echo ""
+}
+
 print_banner() {
     echo -e "${CYAN}"
     echo "╔═══════════════════════════════════════════════════════════╗"
@@ -41,11 +104,47 @@ print_banner() {
     echo -e "${NC}"
 }
 
+# Progress step indicator
+step() {
+    CURRENT_STEP=$((CURRENT_STEP + 1))
+    echo ""
+    echo -e "${BOLD}[${CURRENT_STEP}/${TOTAL_STEPS}]${NC} ${CYAN}$1${NC}"
+    echo ""
+}
+
+# Confirm prompt (respects YES_MODE)
+confirm() {
+    local prompt="$1"
+    local default="${2:-Y}"
+
+    if [ "$YES_MODE" == "true" ]; then
+        return 0
+    fi
+
+    if [ "$IS_REMOTE_INSTALL" == "true" ]; then
+        return 0
+    fi
+
+    local yn_hint="[Y/n]"
+    if [ "$default" == "N" ]; then
+        yn_hint="[y/N]"
+    fi
+
+    read -p "$prompt $yn_hint: " response
+    response=${response:-$default}
+
+    if [[ "$response" =~ ^[Yy]$ ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 # Helper functions
-info() { echo -e "${BLUE}[INFO]${NC} $1"; }
-success() { echo -e "${GREEN}[OK]${NC} $1"; }
-warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
-error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
+info() { echo -e "  ${BLUE}→${NC} $1"; }
+success() { echo -e "  ${GREEN}✓${NC} $1"; }
+warn() { echo -e "  ${YELLOW}!${NC} $1"; }
+error() { echo -e "  ${RED}✗${NC} $1"; exit 1; }
 
 # Generate or load secrets
 generate_secrets() {
@@ -133,13 +232,14 @@ detect_user_ids() {
 
 # Detect system resources and set installation profile
 detect_resources() {
-    info "Detecting system resources..."
-
     if [ -f "$SCRIPT_DIR/detect-resources.sh" ]; then
         # Source environment variables from detect-resources.sh
         eval "$("$SCRIPT_DIR/detect-resources.sh" --env)"
 
-        PROFILE="$CAIIDE_PROFILE"
+        # Use preset PROFILE if provided, otherwise use detected
+        if [ -z "$PROFILE" ]; then
+            PROFILE="$CAIIDE_PROFILE"
+        fi
         RAM_GB="$CAIIDE_RAM_GB"
         CPU_CORES="$CAIIDE_CPU_CORES"
         DISK_GB="$CAIIDE_DISK_GB"
@@ -147,38 +247,46 @@ detect_resources() {
         DOCKER_AVAILABLE="$CAIIDE_DOCKER_AVAILABLE"
         DOCKER_RUNNING="$CAIIDE_DOCKER_RUNNING"
 
-        echo ""
-        echo "  RAM:     ${RAM_GB} GB"
-        echo "  CPU:     ${CPU_CORES} cores"
-        echo "  Disk:    ${DISK_GB} GB available"
-        echo "  Docker:  $([ "$DOCKER_RUNNING" == "true" ] && echo "Running" || echo "Not running")"
-        echo ""
-        success "Recommended profile: $PROFILE"
+        success "RAM: ${RAM_GB} GB"
+        success "CPU: ${CPU_CORES} cores"
+        success "Disk: ${DISK_GB} GB available"
+        if [ "$DOCKER_RUNNING" == "true" ]; then
+            success "Docker: Running"
+        else
+            warn "Docker: Not running"
+        fi
     else
         warn "Resource detection script not found, using defaults"
-        PROFILE="standard"
+        if [ -z "$PROFILE" ]; then
+            PROFILE="standard"
+        fi
         DOCKER_AVAILABLE="false"
         DOCKER_RUNNING="false"
     fi
 
-    # Allow override via environment or user input (non-remote install)
-    if [ "$IS_REMOTE_INSTALL" != "true" ]; then
+    # Allow override via user input (unless in quick/remote mode)
+    if [ "$IS_REMOTE_INSTALL" != "true" ] && [ "$QUICK_MODE" != "true" ]; then
         echo ""
         echo "Installation profiles:"
-        echo "  minimal   - SQLite + Vault (lightweight, no Docker)"
-        echo "  standard  - + Redis (recommended for most)"
-        echo "  full      - + Neo4j/Graphiti (knowledge graph)"
-        echo "  enterprise - + livegrep (code search, maximum features)"
+        echo "  ${GREEN}standard${NC}    - Redis + SQLite + Vault (recommended)"
+        echo "  minimal     - SQLite + Vault only (lightweight)"
+        echo "  full        - + Neo4j/Graphiti knowledge graph"
+        echo "  enterprise  - + livegrep code search"
         echo ""
-        read -p "Use recommended profile '$PROFILE'? [Y/n]: " use_recommended
-        use_recommended=${use_recommended:-Y}
+        read -p "Use profile '$PROFILE'? [Y/n or enter different profile]: " profile_input
+        profile_input=${profile_input:-Y}
 
-        if [[ ! "$use_recommended" =~ ^[Yy]$ ]]; then
-            read -p "Enter profile (minimal/standard/full/enterprise): " PROFILE
-            PROFILE=${PROFILE:-standard}
+        if [[ ! "$profile_input" =~ ^[Yy]$ ]]; then
+            if [[ "$profile_input" =~ ^(minimal|standard|full|enterprise)$ ]]; then
+                PROFILE="$profile_input"
+            else
+                read -p "Enter profile (minimal/standard/full/enterprise): " PROFILE
+                PROFILE=${PROFILE:-standard}
+            fi
         fi
     fi
 
+    info "Selected profile: $PROFILE"
     export CAIIDE_PROFILE="$PROFILE"
 }
 
@@ -1384,31 +1492,32 @@ install_openclaw_daemon() {
 # Full OpenClaw setup
 setup_openclaw() {
     # Check if OpenClaw integration is desired
-    if [ "$IS_REMOTE_INSTALL" == "true" ]; then
-        # In remote install, default to yes if submodule exists
-        if [ "$OPENCLAW_AVAILABLE" == "true" ]; then
-            SETUP_OPENCLAW="true"
-        fi
-    else
-        echo ""
-        echo -e "${CYAN}OpenClaw Integration${NC}"
-        echo ""
-        echo "OpenClaw provides multi-channel AI gateway access:"
-        echo "  - Chat with Claude via WhatsApp, Telegram, Discord, Slack, etc."
-        echo "  - Shared memory with Claude Code++ (preferences, decisions, context)"
-        echo "  - Voice integration and mobile apps"
-        echo ""
-
-        if [ "$OPENCLAW_AVAILABLE" == "true" ]; then
-            read -p "Install OpenClaw with shared memory? (Recommended) [Y/n]: " setup_choice
-            setup_choice=${setup_choice:-Y}
+    if [ "$SETUP_OPENCLAW" != "true" ]; then
+        if [ "$IS_REMOTE_INSTALL" == "true" ] || [ "$QUICK_MODE" == "true" ]; then
+            # In remote/quick mode, default to yes if submodule exists and Node.js 22+ available
+            if [ "$OPENCLAW_AVAILABLE" == "true" ]; then
+                if check_node_for_openclaw 2>/dev/null; then
+                    SETUP_OPENCLAW="true"
+                fi
+            fi
         else
-            read -p "Install OpenClaw with shared memory? [y/N]: " setup_choice
-            setup_choice=${setup_choice:-N}
-        fi
+            echo ""
+            echo -e "${CYAN}OpenClaw Integration${NC}"
+            echo ""
+            echo "OpenClaw provides multi-channel AI gateway access:"
+            echo "  • Chat with Claude via WhatsApp, Telegram, Discord, Slack"
+            echo "  • Shared memory with Claude Code++"
+            echo "  • Voice integration and mobile apps"
+            echo ""
 
-        if [[ "$setup_choice" =~ ^[Yy]$ ]]; then
-            SETUP_OPENCLAW="true"
+            local default_choice="N"
+            if [ "$OPENCLAW_AVAILABLE" == "true" ]; then
+                default_choice="Y"
+            fi
+
+            if confirm "Install OpenClaw with shared memory?" "$default_choice"; then
+                SETUP_OPENCLAW="true"
+            fi
         fi
     fi
 
@@ -1423,11 +1532,15 @@ setup_openclaw() {
     # Configure integration
     configure_openclaw_integration
 
-    # Optional: Channel setup
-    setup_openclaw_channels
+    # Optional: Channel setup (skip in quick mode)
+    if [ "$QUICK_MODE" != "true" ]; then
+        setup_openclaw_channels
+    fi
 
-    # Optional: Daemon installation
-    install_openclaw_daemon
+    # Optional: Daemon installation (skip in quick mode)
+    if [ "$QUICK_MODE" != "true" ]; then
+        install_openclaw_daemon
+    fi
 
     success "OpenClaw integration complete"
 }
@@ -1517,25 +1630,76 @@ print_summary() {
     echo ""
 }
 
+# Pre-flight summary
+print_preflight_summary() {
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+    echo -e "${BOLD}Installation Summary${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo "  Directory:   $INSTALL_DIR"
+    echo "  Profile:     $PROFILE"
+    echo "  Docker:      $([ "$DOCKER_RUNNING" == "true" ] && echo "Available" || echo "Not running")"
+    if [ "$USE_MCP_GATEWAY" == "true" ]; then
+        echo "  Mode:        Docker MCP Gateway"
+    else
+        echo "  Mode:        Traditional"
+    fi
+    echo ""
+    echo "  Components to install:"
+    case $PROFILE in
+        minimal)
+            echo "    • SQLite (cold storage)"
+            echo "    • Vault (archive tier)"
+            ;;
+        standard)
+            echo "    • Redis (hot cache)"
+            echo "    • SQLite (cold storage)"
+            echo "    • Vault (archive tier)"
+            ;;
+        full)
+            echo "    • Redis (hot cache)"
+            echo "    • Neo4j/Graphiti (knowledge graph)"
+            echo "    • SQLite (cold storage)"
+            echo "    • Vault (archive tier)"
+            ;;
+        enterprise)
+            echo "    • Redis (hot cache)"
+            echo "    • Neo4j/Graphiti (knowledge graph)"
+            echo "    • livegrep (code search)"
+            echo "    • SQLite (cold storage)"
+            echo "    • Vault (archive tier)"
+            ;;
+    esac
+
+    if [ "$SETUP_OPENCLAW" == "true" ]; then
+        echo "    • OpenClaw (multi-channel AI gateway)"
+    fi
+
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+    echo ""
+}
+
 # Main installation flow
 main() {
+    # Parse command-line arguments
+    parse_args "$@"
+
     print_banner
 
-    # Detect resources and set profile
+    # Step 1: Detect resources
+    step "Detecting system resources"
     detect_resources
-    echo ""
 
-    # Check for Docker MCP Toolkit
+    # Step 2: Check Docker MCP Toolkit
+    step "Checking available tools"
     detect_docker_mcp_toolkit
-    echo ""
-
-    # Check for OpenClaw submodule
     detect_openclaw_submodule
-    echo ""
 
     # Decide installation mode
     USE_MCP_GATEWAY="false"
-    if [ "$DOCKER_MCP_AVAILABLE" == "true" ] && [ "$IS_REMOTE_INSTALL" != "true" ]; then
+    if [ "$DOCKER_MCP_AVAILABLE" == "true" ] && [ "$IS_REMOTE_INSTALL" != "true" ] && [ "$QUICK_MODE" != "true" ]; then
         echo ""
         echo -e "${CYAN}Docker MCP Gateway Detected${NC}"
         echo ""
@@ -1543,84 +1707,95 @@ main() {
         echo "  - Containerized MCP servers for enhanced isolation"
         echo "  - Easy management via 'docker mcp' commands"
         echo "  - Permission Broker for secure privilege escalation"
-        echo "  - Better security boundaries for AI tools"
         echo ""
-        read -p "Use Docker MCP Gateway mode? (Recommended) [Y/n]: " use_gateway
-        use_gateway=${use_gateway:-Y}
-
-        if [[ "$use_gateway" =~ ^[Yy]$ ]]; then
+        if confirm "Use Docker MCP Gateway mode? (Recommended)"; then
             USE_MCP_GATEWAY="true"
             info "Installing in Docker MCP Gateway mode"
         fi
     fi
 
+    # Show pre-flight summary
+    print_preflight_summary
+
+    if [ "$QUICK_MODE" != "true" ] && [ "$IS_REMOTE_INSTALL" != "true" ]; then
+        if ! confirm "Proceed with installation?"; then
+            echo "Installation cancelled."
+            exit 0
+        fi
+    fi
+
+    # Step 3: Check prerequisites
+    step "Checking prerequisites"
     check_prerequisites
-    echo ""
 
+    # Step 4: Create directories
+    step "Creating directory structure"
     create_directories
-    echo ""
 
-    # Generate secrets BEFORE starting services
+    # Step 5: Generate secrets
+    step "Setting up environment"
     generate_secrets
-    echo ""
 
     if [ "$USE_MCP_GATEWAY" == "true" ]; then
-        # Docker MCP Gateway mode installation
+        # Step 6: Install Python package
+        step "Installing Memory MCP server"
         install_python_package
-        echo ""
 
+        # Step 7: Setup MCP Gateway
+        step "Configuring Docker MCP Gateway"
         install_mcp_gateway_mode
-        echo ""
-
         configure_claude_mcp_gateway
-        echo ""
 
-        # Setup Permission Broker for secure privilege escalation
+        # Step 8: Permission Broker
+        step "Setting up Permission Broker"
         setup_permission_broker
-        echo ""
     else
-        # Traditional installation mode
+        # Step 6: Install Python package
+        step "Installing Memory MCP server"
         install_python_package
-        echo ""
-
         create_wrapper_script
-        echo ""
 
-        # Start Docker services based on profile
+        # Step 7: Start Docker services
+        step "Starting infrastructure services"
         start_docker_services
-        echo ""
 
+        # Step 8: Configure Claude
+        step "Configuring Claude Code"
         configure_claude
-        echo ""
     fi
 
+    # Step 9: Extensions and optional components
+    step "Installing extensions"
     copy_claude_extensions
-    echo ""
 
     # Standalone Redis option (for minimal profile without Docker)
-    if [ "$USE_MCP_GATEWAY" != "true" ]; then
+    if [ "$USE_MCP_GATEWAY" != "true" ] && [ "$QUICK_MODE" != "true" ]; then
         setup_redis_standalone
-        echo ""
     fi
 
-    # Install CAIIDE++ IDE
-    install_caiide
-    echo ""
+    # Install CAIIDE++ IDE (skip in quick mode)
+    if [ "$QUICK_MODE" != "true" ]; then
+        install_caiide
+    fi
 
-    # Research environment (optional)
-    setup_research_env
-    echo ""
+    # Research environment (skip in quick mode)
+    if [ "$QUICK_MODE" != "true" ]; then
+        setup_research_env
+    fi
 
-    # OpenClaw multi-channel AI gateway (optional)
+    # OpenClaw multi-channel AI gateway
     setup_openclaw
-    echo ""
 
+    # Step 10: Verify installation
+    step "Verifying installation"
     verify_installation
 
     print_summary
 
-    # Launch CAIIDE++ with onboarding
-    launch_caiide
+    # Launch CAIIDE++ with onboarding (skip in quick mode)
+    if [ "$QUICK_MODE" != "true" ]; then
+        launch_caiide
+    fi
 }
 
 # Run installer

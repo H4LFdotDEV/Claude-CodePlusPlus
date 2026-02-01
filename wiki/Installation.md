@@ -2,17 +2,37 @@
 
 This guide covers installing Claude Code++ and all its components.
 
-## Unified Installer (Recommended)
+## Quick Install (Recommended)
 
-The easiest way to install Claude Code++ is with the unified installer:
+### One-Liner
 
 ```bash
-# Clone the repository
+curl -fsSL https://raw.githubusercontent.com/H4LFdotDEV/Claude-CodePlusPlus/main/scripts/quick-install.sh | bash
+```
+
+### Fully Automated
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/H4LFdotDEV/Claude-CodePlusPlus/main/scripts/quick-install.sh | bash -s -- --quick
+```
+
+### Clone and Install
+
+```bash
 git clone https://github.com/H4LFdotDEV/Claude-CodePlusPlus.git
 cd Claude-CodePlusPlus
-
-# Run the installer
 ./install.sh
+```
+
+## Installer Options
+
+```bash
+./install.sh                    # Interactive (recommended for first install)
+./install.sh --quick            # Use all defaults, no prompts
+./install.sh --yes              # Auto-accept all prompts
+./install.sh --profile full     # Use specific profile
+./install.sh --with-openclaw    # Include OpenClaw gateway
+./install.sh --help             # Show all options
 ```
 
 The installer will:

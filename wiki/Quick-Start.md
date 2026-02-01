@@ -2,12 +2,26 @@
 
 Get running with Claude Code++ in under 5 minutes.
 
-## Step 1: Install
+## Option A: One-Liner Install (Fastest)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/H4LFdotDEV/Claude-CodePlusPlus/main/scripts/quick-install.sh | bash
+```
+
+For fully automated with all defaults:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/H4LFdotDEV/Claude-CodePlusPlus/main/scripts/quick-install.sh | bash -s -- --quick
+```
+
+## Option B: Clone and Install
 
 ```bash
 git clone https://github.com/H4LFdotDEV/Claude-CodePlusPlus.git
 cd Claude-CodePlusPlus
-./install.sh
+./install.sh              # Interactive mode
+./install.sh --quick      # All defaults, no prompts
+./install.sh --help       # See all options
 ```
 
 The installer will guide you through:

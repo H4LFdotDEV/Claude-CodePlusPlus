@@ -15,11 +15,27 @@ Claude Code++ transforms Claude from a stateless assistant into a context-aware 
 
 ## Quick Start
 
+### One-Liner Install (Recommended)
+
 ```bash
-# Clone and install everything
+curl -fsSL https://raw.githubusercontent.com/H4LFdotDEV/Claude-CodePlusPlus/main/scripts/quick-install.sh | bash
+```
+
+For a fully automated install with defaults:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/H4LFdotDEV/Claude-CodePlusPlus/main/scripts/quick-install.sh | bash -s -- --quick
+```
+
+### Manual Install
+
+```bash
+# Clone and install
 git clone https://github.com/H4LFdotDEV/Claude-CodePlusPlus.git
 cd Claude-CodePlusPlus
-./install.sh
+./install.sh                  # Interactive
+./install.sh --quick          # Use all defaults
+./install.sh --with-openclaw  # Include OpenClaw
 ```
 
 The installer will:
