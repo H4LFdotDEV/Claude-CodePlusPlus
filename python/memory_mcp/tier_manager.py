@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Any, TYPE_CHECKING
 
 from .access_tracker import AccessTracker
 from .stats_collector import record
+from .async_utils import run_async
 
 if TYPE_CHECKING:
     from .redis_client import RedisClient
@@ -17,6 +18,10 @@ if TYPE_CHECKING:
     from .sqlite_index import SQLiteIndex
 
 logger = logging.getLogger("memory_mcp")
+
+# Constants for timeouts and limits
+GRAPHITI_TIMEOUT_SECONDS = 30.0
+PROMOTION_TIMEOUT_SECONDS = 60.0
 
 
 @dataclass
@@ -98,11 +103,14 @@ class TierManager:
             if not doc:
                 return False
 
-            # Add to knowledge graph
-            self.graphiti.add_episode(
-                name=f"memory:{doc_id}",
-                episode_body=doc.content,
-                source_description=doc.source
+            # Add to knowledge graph using shared async utility with timeout
+            run_async(
+                self.graphiti.add_memory(
+                    content=doc.content,
+                    source=doc.source,
+                    doc_type=doc.doc_type
+                ),
+                timeout=PROMOTION_TIMEOUT_SECONDS
             )
 
             latency_ms = (time.time() - start) * 1000
@@ -274,8 +282,24 @@ class TierManager:
             return []
 
         try:
-            return self.graphiti.search(query, limit=limit)
-        except Exception:
+            # Use shared async utility with timeout
+            entities = run_async(
+                self.graphiti.search_entities(query, limit=limit),
+                timeout=GRAPHITI_TIMEOUT_SECONDS
+            )
+            return [
+                {
+                    "uuid": e.id,
+                    "id": e.id,
+                    "name": e.name,
+                    "summary": e.summary,
+                    "labels": e.labels,
+                    "source_description": "graphiti"
+                }
+                for e in entities
+            ]
+        except Exception as e:
+            logger.debug(f"Graphiti search failed: {e}")
             return []
 
     def _search_livegrep(self, query: str, limit: int) -> List[Dict]:
@@ -284,9 +308,20 @@ class TierManager:
             return []
 
         try:
-            result = self.livegrep.search(query, max_matches=limit)
-            return result.get("results", [])
-        except Exception:
+            response = self.livegrep.search(query, max_matches=limit)
+            # LivegrepSearchResponse is a dataclass, not a dict
+            return [
+                {
+                    "repo": r.repo,
+                    "path": r.path,
+                    "line_number": r.line_number,
+                    "line": r.line_content,
+                    "tier": "cold"
+                }
+                for r in response.results
+            ]
+        except Exception as e:
+            logger.debug(f"livegrep search failed: {e}")
             return []
 
     def _entity_to_result(self, entity: Dict) -> Dict[str, Any]:

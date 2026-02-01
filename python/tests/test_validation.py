@@ -343,7 +343,11 @@ class TestConstants:
         assert "note" in ALLOWED_DOC_TYPES
         assert "reference" in ALLOWED_DOC_TYPES
         assert "conversation" in ALLOWED_DOC_TYPES
-        assert len(ALLOWED_DOC_TYPES) == 4
+        # Research types
+        assert "transcript" in ALLOWED_DOC_TYPES
+        assert "research_image" in ALLOWED_DOC_TYPES
+        assert "research_session" in ALLOWED_DOC_TYPES
+        assert len(ALLOWED_DOC_TYPES) == 7  # 4 core + 3 research
 
     def test_max_content_size(self):
         """Test MAX_CONTENT_SIZE is 1MB."""

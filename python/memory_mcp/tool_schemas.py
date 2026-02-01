@@ -311,6 +311,98 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
                 },
                 "required": ["query"]
             }
+        },
+        # Tier-specific tools (knowledge graph and code search)
+        {
+            "name": "search_entities",
+            "description": (
+                "Search the knowledge graph for entities (people, concepts, projects, etc). "
+                "Use this when you need to understand relationships between concepts or "
+                "find entities mentioned across multiple conversations. Returns entity names, "
+                "summaries, and labels from the Graphiti knowledge graph."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query"},
+                    "limit": {"type": "integer", "default": 10, "description": "Max results (max 100)"}
+                },
+                "required": ["query"]
+            }
+        },
+        {
+            "name": "search_facts",
+            "description": (
+                "Search the knowledge graph for facts and relationships between entities. "
+                "Use this to find how concepts relate to each other or to trace decision "
+                "history. Returns source entity, target entity, and the fact connecting them."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query"},
+                    "limit": {"type": "integer", "default": 10, "description": "Max results (max 100)"}
+                },
+                "required": ["query"]
+            }
+        },
+        {
+            "name": "code_search",
+            "description": (
+                "Search code across all indexed repositories using regex patterns. "
+                "Fast (<100ms) even for large codebases. Use RE2 regex syntax. "
+                "Supports path and repo filters for narrowing results."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "RE2 regex pattern to search for"},
+                    "path_filter": {"type": "string", "description": "Glob pattern to filter files (e.g., '*.py')"},
+                    "repo_filter": {"type": "string", "description": "Repository name to search within"},
+                    "limit": {"type": "integer", "default": 50, "description": "Max results (max 200)"}
+                },
+                "required": ["query"]
+            }
+        },
+        {
+            "name": "search_function",
+            "description": (
+                "Find function or method definitions by name across codebases. "
+                "Searches for def/function/func patterns based on the specified language. "
+                "Useful for finding where a function is defined before examining its implementation."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Function name to search for"},
+                    "language": {
+                        "type": "string",
+                        "description": "Programming language (python, javascript, typescript, go, rust, java, c, cpp)"
+                    },
+                    "limit": {"type": "integer", "default": 50, "description": "Max results (max 200)"}
+                },
+                "required": ["name"]
+            }
+        },
+        {
+            "name": "search_class",
+            "description": (
+                "Find class, struct, or interface definitions by name across codebases. "
+                "Searches for class/struct/interface/type patterns based on the specified language. "
+                "Useful for finding type definitions and understanding code architecture."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Class/struct name to search for"},
+                    "language": {
+                        "type": "string",
+                        "description": "Programming language (python, javascript, typescript, go, rust, java)"
+                    },
+                    "limit": {"type": "integer", "default": 50, "description": "Max results (max 200)"}
+                },
+                "required": ["name"]
+            }
         }
     ]
 
@@ -334,6 +426,13 @@ TOOL_RESEARCH_TRANSCRIPT_STORE = "research_transcript_store"
 TOOL_RESEARCH_CAPTURE_STORE = "research_capture_store"
 TOOL_RESEARCH_SEARCH = "research_search"
 
+# Tier-specific tool name constants
+TOOL_SEARCH_ENTITIES = "search_entities"
+TOOL_SEARCH_FACTS = "search_facts"
+TOOL_CODE_SEARCH = "code_search"
+TOOL_SEARCH_FUNCTION = "search_function"
+TOOL_SEARCH_CLASS = "search_class"
+
 # All tool names for iteration
 ALL_TOOL_NAMES = [
     TOOL_MEMORY_STORE,
@@ -351,5 +450,11 @@ ALL_TOOL_NAMES = [
     TOOL_RESEARCH_SESSION_END,
     TOOL_RESEARCH_TRANSCRIPT_STORE,
     TOOL_RESEARCH_CAPTURE_STORE,
-    TOOL_RESEARCH_SEARCH
+    TOOL_RESEARCH_SEARCH,
+    # Tier-specific tools
+    TOOL_SEARCH_ENTITIES,
+    TOOL_SEARCH_FACTS,
+    TOOL_CODE_SEARCH,
+    TOOL_SEARCH_FUNCTION,
+    TOOL_SEARCH_CLASS
 ]

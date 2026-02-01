@@ -8,6 +8,7 @@ from .session import SessionHandler
 from .vault import VaultHandler
 from .stats import StatsHandler
 from .research import ResearchHandler
+from .tier import TierHandler
 
 __all__ = [
     "BaseHandler",
@@ -16,4 +17,5 @@ __all__ = [
     "VaultHandler",
     "StatsHandler",
     "ResearchHandler",
+    "TierHandler",
 ]

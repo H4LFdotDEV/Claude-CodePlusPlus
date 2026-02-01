@@ -106,44 +106,50 @@ class MemoryHandler(BaseHandler):
 
         logger.debug(f"Searching for: '{query[:50]}...' type={search_type} limit={limit}")
 
+        # Use TierManager for multi-tier search if available (hybrid or semantic)
+        if self.tier_manager and search_type in ["hybrid", "semantic"]:
+            tier_results = self.tier_manager.search_all_tiers(
+                query, limit=limit * 2, search_type=search_type
+            )
+
+            # Apply filters and format results
+            results = []
+            for r in tier_results:
+                # Filter by doc_type if specified
+                if filters.get("doc_type") and r.get("type") != filters["doc_type"]:
+                    continue
+                # Filter by project if specified
+                if filters.get("project") and r.get("project") != filters["project"]:
+                    continue
+                # Filter by tags if specified
+                if filters.get("tags"):
+                    result_tags = r.get("tags", [])
+                    if not any(t in result_tags for t in filters["tags"]):
+                        continue
+                results.append(r)
+
+            results = results[:limit]
+            return {"results": results, "total": len(results)}
+
+        # Fallback to SQLite-only search (text mode or no TierManager)
         results = []
         seen_ids: set = set()  # O(1) deduplication
 
         # Text search via SQLite FTS
-        if search_type in ["text", "hybrid"]:
-            text_results = self.sqlite.search_fulltext(query, limit=limit * 2)
-            for doc in text_results:
-                if self._matches_filters(doc, filters):
-                    if doc.id not in seen_ids:
-                        seen_ids.add(doc.id)
-                        results.append({
-                            "id": doc.id,
-                            "content": doc.content[:500],
-                            "type": doc.doc_type,
-                            "source": doc.source,
-                            "score": 1.0,
-                            "match_type": "text"
-                        })
-
-        # TODO: Semantic search via Graphiti knowledge graph (warm tier)
-        # For now, semantic search falls back to text search
-        if search_type == "semantic" and not results:
-            logger.debug(
-                "Semantic search requested but Graphiti not yet integrated - using text search"
-            )
-            text_results = self.sqlite.search_fulltext(query, limit=limit * 2)
-            for doc in text_results:
-                if self._matches_filters(doc, filters):
-                    if doc.id not in seen_ids:
-                        seen_ids.add(doc.id)
-                        results.append({
-                            "id": doc.id,
-                            "content": doc.content[:500],
-                            "type": doc.doc_type,
-                            "source": doc.source,
-                            "score": 0.8,  # Lower score for fallback
-                            "match_type": "text_fallback"
-                        })
+        text_results = self.sqlite.search_fulltext(query, limit=limit * 2)
+        for doc in text_results:
+            if self._matches_filters(doc, filters):
+                if doc.id not in seen_ids:
+                    seen_ids.add(doc.id)
+                    results.append({
+                        "id": doc.id,
+                        "content": doc.content[:500],
+                        "type": doc.doc_type,
+                        "source": doc.source,
+                        "score": 1.0,
+                        "match_type": "text",
+                        "tier": "cold"
+                    })
 
         # Sort by score and limit
         results.sort(key=lambda x: x["score"], reverse=True)
@@ -179,6 +185,10 @@ class MemoryHandler(BaseHandler):
         if not doc:
             logger.debug(f"Document not found: {doc_id}")
             return {"found": False, "id": doc_id}
+
+        # Track access for tier promotion (5+ accesses triggers warm tier promotion)
+        if self.tier_manager:
+            self.tier_manager.record_access(doc_id, len(doc.content))
 
         logger.debug(f"Found document: {doc_id}")
         return {

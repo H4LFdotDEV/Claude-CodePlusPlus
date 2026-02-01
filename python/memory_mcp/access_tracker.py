@@ -2,12 +2,16 @@
 # Tracks document access patterns for tier promotion decisions
 # Jeremiah Kroesche | Halfservers LLC
 
-from dataclasses import dataclass, field
+from collections import OrderedDict
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Dict, Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .redis_client import RedisClient
+
+# Maximum entries in local cache before LRU eviction
+MAX_LOCAL_CACHE_SIZE = 10000
 
 
 @dataclass
@@ -35,12 +39,18 @@ class AccessTracker:
     """Tracks document access patterns for promotion decisions.
 
     Uses Redis for distributed tracking when available,
-    falls back to local in-memory cache.
+    falls back to local in-memory cache with LRU eviction.
     """
 
-    def __init__(self, redis_client: Optional["RedisClient"] = None):
+    def __init__(
+        self,
+        redis_client: Optional["RedisClient"] = None,
+        max_cache_size: int = MAX_LOCAL_CACHE_SIZE
+    ):
         self.redis = redis_client
-        self._local_cache: Dict[str, AccessStats] = {}
+        self._max_cache_size = max_cache_size
+        # OrderedDict for LRU eviction (most recently used at end)
+        self._local_cache: OrderedDict[str, AccessStats] = OrderedDict()
 
     def record_access(self, doc_id: str, size: int = 0) -> None:
         """Record an access to a document."""
@@ -60,8 +70,14 @@ class AccessTracker:
             except Exception:
                 pass  # Fall back to local cache
 
-        # Local cache fallback
-        if doc_id not in self._local_cache:
+        # Local cache fallback with LRU eviction
+        if doc_id in self._local_cache:
+            # Move to end (most recently used)
+            self._local_cache.move_to_end(doc_id)
+        else:
+            # Evict oldest entries if cache is full
+            while len(self._local_cache) >= self._max_cache_size:
+                self._local_cache.popitem(last=False)  # Remove oldest (first)
             self._local_cache[doc_id] = AccessStats(doc_id=doc_id)
         self._local_cache[doc_id].record_access(size)
 
@@ -88,7 +104,11 @@ class AccessTracker:
                 pass  # Fall back to local cache
 
         # Local cache fallback
-        return self._local_cache.get(doc_id, AccessStats(doc_id=doc_id))
+        if doc_id in self._local_cache:
+            # Move to end (most recently accessed)
+            self._local_cache.move_to_end(doc_id)
+            return self._local_cache[doc_id]
+        return AccessStats(doc_id=doc_id)
 
     def get_hot_documents(self, threshold: int = 5, limit: int = 100) -> list:
         """Get documents that have been accessed frequently.

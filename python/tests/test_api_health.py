@@ -697,17 +697,24 @@ class TestMCPProtocolCompliance:
         assert "name" in result["serverInfo"]
         assert "capabilities" in result
 
-    def test_list_tools_returns_all_ten(self, mcp_server):
-        """Test list_tools returns exactly 10 tools."""
+    def test_list_tools_returns_all_tools(self, mcp_server):
+        """Test list_tools returns all 20 tools (10 core + 5 research + 5 tier)."""
         result = mcp_server.handle_list_tools()
 
         assert "tools" in result
-        assert len(result["tools"]) == 10
+        assert len(result["tools"]) == 20
 
         expected_tools = [
+            # Core tools
             "memory_store", "memory_search", "memory_recall", "memory_delete",
             "memory_list", "session_save", "session_restore",
-            "vault_write", "vault_read", "memory_stats"
+            "vault_write", "vault_read", "memory_stats",
+            # Research tools
+            "research_session_start", "research_session_end",
+            "research_transcript_store", "research_capture_store", "research_search",
+            # Tier tools
+            "search_entities", "search_facts", "code_search",
+            "search_function", "search_class"
         ]
 
         tool_names = [t["name"] for t in result["tools"]]

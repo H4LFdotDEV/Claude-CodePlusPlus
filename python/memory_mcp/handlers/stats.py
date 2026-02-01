@@ -25,6 +25,7 @@ class StatsHandler(BaseHandler):
             - session_id: Current server session ID
             - components: Boolean availability of each component
             - health: Status and latency for each component
+            - tiers: Multi-tier health and statistics
             - Detailed stats for sqlite, vault, redis, embedder
         """
         logger.debug("Gathering memory statistics")
@@ -36,7 +37,8 @@ class StatsHandler(BaseHandler):
                 "sqlite": True,
                 "vault": True,
                 "redis": self.redis is not None,
-                "embedder": self.embedder is not None
+                "embedder": self.embedder is not None,
+                "tier_manager": self.tier_manager is not None
             },
             "health": {}
         }
@@ -52,6 +54,9 @@ class StatsHandler(BaseHandler):
 
         # Embedder info with health check
         stats = self._check_embedder_health(stats)
+
+        # Tier system stats
+        stats = self._check_tier_health(stats)
 
         logger.debug(f"Stats gathered: {stats['sqlite_count']} documents in SQLite")
         return stats
@@ -178,5 +183,50 @@ class StatsHandler(BaseHandler):
                 "health": {
                     **stats["health"],
                     "embedder": {"status": "error", "error": str(e)}
+                }
+            }
+
+    def _check_tier_health(self, stats: Dict[str, Any]) -> Dict[str, Any]:
+        """Check tier system health and gather tier-level statistics."""
+        if not self.tier_manager:
+            return {
+                **stats,
+                "tiers": {"status": "not_configured"}
+            }
+
+        try:
+            start = time.time()
+            tier_stats = self.tier_manager.get_tier_stats()
+            latency_ms = (time.time() - start) * 1000
+
+            # Add tier-level health indicators
+            tier_health = {
+                "status": "healthy",
+                "latency_ms": round(latency_ms, 2)
+            }
+
+            # Check each tier's availability
+            tiers = tier_stats.get("tiers", {})
+            available_tiers = [
+                name for name, info in tiers.items()
+                if info.get("available", False)
+            ]
+            tier_health["available_tiers"] = available_tiers
+
+            return {
+                **stats,
+                "tiers": tier_stats,
+                "health": {
+                    **stats["health"],
+                    "tier_manager": tier_health
+                }
+            }
+        except Exception as e:
+            logger.warning(f"Failed to get tier stats: {e}")
+            return {
+                **stats,
+                "health": {
+                    **stats["health"],
+                    "tier_manager": {"status": "error", "error": str(e)}
                 }
             }

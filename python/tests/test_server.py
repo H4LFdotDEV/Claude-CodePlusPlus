@@ -33,9 +33,10 @@ class TestMemoryMCPServer:
         result = mcp_server.handle_list_tools()
         assert "tools" in result
         tools = result["tools"]
-        assert len(tools) == 10
+        assert len(tools) == 20  # 10 core + 5 research + 5 tier
 
         tool_names = [t["name"] for t in tools]
+        # Core tools
         assert "memory_store" in tool_names
         assert "memory_search" in tool_names
         assert "memory_recall" in tool_names
@@ -46,6 +47,12 @@ class TestMemoryMCPServer:
         assert "vault_write" in tool_names
         assert "vault_read" in tool_names
         assert "memory_stats" in tool_names
+        # Tier tools
+        assert "search_entities" in tool_names
+        assert "search_facts" in tool_names
+        assert "code_search" in tool_names
+        assert "search_function" in tool_names
+        assert "search_class" in tool_names
 
     def test_handle_unknown_tool(self, mcp_server):
         """Test handling unknown tool."""

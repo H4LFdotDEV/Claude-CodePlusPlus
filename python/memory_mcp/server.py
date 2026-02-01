@@ -18,7 +18,10 @@ from .vault_manager import VaultManager
 from .redis_client import RedisClient, REDIS_AVAILABLE
 from .embedding_provider import get_embedding_provider
 from .tool_schemas import get_tool_schemas
-from .handlers import MemoryHandler, SessionHandler, VaultHandler, StatsHandler, ResearchHandler
+from .handlers import MemoryHandler, SessionHandler, VaultHandler, StatsHandler, ResearchHandler, TierHandler
+from .graphiti_manager import GraphitiManager, GRAPHITI_AVAILABLE
+from .livegrep_client import LivegrepClient, HTTPX_AVAILABLE
+from .tier_manager import TierManager
 
 # Configure logging
 LOG_LEVEL = os.environ.get("MEMORY_MCP_LOG_LEVEL", "INFO").upper()
@@ -60,6 +63,9 @@ class MemoryMCPServer:
         # Optional components (may not be available)
         self.redis: Optional[RedisClient] = None
         self.embedder = None
+        self.graphiti: Optional[GraphitiManager] = None
+        self.livegrep: Optional[LivegrepClient] = None
+        self.tier_manager: Optional[TierManager] = None
 
         self._init_optional_components()
 
@@ -95,6 +101,42 @@ class MemoryMCPServer:
             logger.warning(f"Embedding provider initialization failed: {e}")
             self.embedder = None
 
+        # Graphiti (warm tier - knowledge graph)
+        if GRAPHITI_AVAILABLE:
+            try:
+                self.graphiti = GraphitiManager()
+                # Note: Graphiti is async, full initialization happens on first use
+                logger.info("Graphiti manager initialized (lazy connection)")
+            except Exception as e:
+                logger.warning(f"Graphiti initialization failed: {e}")
+                self.graphiti = None
+        else:
+            logger.info("Graphiti not available - install with: pip install graphiti-core")
+
+        # livegrep (cold tier - code search)
+        if HTTPX_AVAILABLE:
+            try:
+                self.livegrep = LivegrepClient()
+                if self.livegrep.health_check():
+                    logger.info("livegrep client connected")
+                else:
+                    logger.info("livegrep server not responding - code search disabled")
+                    self.livegrep = None
+            except Exception as e:
+                logger.warning(f"livegrep initialization failed: {e}")
+                self.livegrep = None
+        else:
+            logger.info("httpx not available for livegrep - install with: pip install httpx")
+
+        # TierManager (orchestrates all tiers)
+        self.tier_manager = TierManager(
+            redis=self.redis,
+            graphiti=self.graphiti,
+            livegrep=self.livegrep,
+            sqlite=self.sqlite
+        )
+        logger.info("TierManager initialized")
+
     def _init_handlers(self):
         """Initialize tool handlers with shared dependencies."""
         handler_kwargs = {
@@ -102,6 +144,7 @@ class MemoryMCPServer:
             "vault": self.vault,
             "redis": self.redis,
             "embedder": self.embedder,
+            "tier_manager": self.tier_manager,
             "session_id": self._session_id
         }
 
@@ -110,6 +153,7 @@ class MemoryMCPServer:
         self._vault_handler = VaultHandler(**handler_kwargs)
         self._stats_handler = StatsHandler(**handler_kwargs)
         self._research_handler = ResearchHandler(**handler_kwargs)
+        self._tier_handler = TierHandler(**handler_kwargs)
 
     # MCP Protocol Methods
 
@@ -169,7 +213,13 @@ class MemoryMCPServer:
             "research_session_end": self._research_handler.session_end,
             "research_transcript_store": self._research_handler.transcript_store,
             "research_capture_store": self._research_handler.capture_store,
-            "research_search": self._research_handler.search
+            "research_search": self._research_handler.search,
+            # Tier-specific tools (knowledge graph and code search)
+            "search_entities": self._tier_handler.search_entities,
+            "search_facts": self._tier_handler.search_facts,
+            "code_search": self._tier_handler.code_search,
+            "search_function": self._tier_handler.search_function,
+            "search_class": self._tier_handler.search_class
         }
 
         handler = tool_dispatch.get(name)
