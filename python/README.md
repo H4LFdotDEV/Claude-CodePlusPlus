@@ -601,6 +601,51 @@ memory_mcp/
     └── tier.py            # Knowledge graph and code search
 ```
 
+## OpenClaw Integration
+
+The Memory MCP server can be shared with OpenClaw for multi-channel access. When configured, preferences and context are shared across Claude Code CLI, WhatsApp, Telegram, Discord, and other channels.
+
+### memory-mcp-bridge
+
+OpenClaw's `memory-mcp-bridge` extension connects to this server:
+
+**~/.openclaw/openclaw.json:**
+```json
+{
+  "plugins": {
+    "memory-mcp-bridge": {
+      "enabled": true,
+      "mcpCommand": "~/.claude-code-pp/bin/memory-mcp",
+      "autoRecall": true,
+      "autoCapture": true,
+      "recallLimit": 5,
+      "recallMinScore": 0.3
+    }
+  }
+}
+```
+
+**Features:**
+- **Auto-Recall**: Relevant memories injected before each message
+- **Auto-Capture**: Important info stored after conversations
+- **Category mapping**: OpenClaw categories mapped to Memory MCP types:
+  - `preference` → `preference`
+  - `decision` → `decision`
+  - `entity` → `reference`
+  - `fact` → `reference`
+  - `other` → `note`
+
+**Installation:**
+```bash
+# Via unified installer (recommended)
+cd Claude-CodePlusPlus
+./install.sh  # Select OpenClaw option
+
+# Or manually
+npm install -g openclaw@latest
+openclaw onboard
+```
+
 ## MCP Integration
 
 Add to `~/.claude.json`:

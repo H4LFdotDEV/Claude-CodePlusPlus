@@ -1,26 +1,46 @@
 # Architecture
 
-Claude Code++ extends Claude Code with a modular architecture designed for persistent memory and system control.
+Claude Code++ extends Claude Code with a modular architecture designed for persistent memory, multi-channel access, and system control.
 
 ## System Overview
 
 ```
-+---------------------------------------------------------------------+
-|                        Claude Code CLI                               |
-|                    (Anthropic's official CLI)                        |
-+---------------------------------------------------------------------+
-|                         MCP Layer                                    |
-|  +----------------+  +----------------+  +------------------------+  |
-|  |  Memory MCP   |  | System Ctrl   |  |  External MCPs         |  |
-|  |   (Python)    |  |   (Swift)     |  |  (filesystem, git)     |  |
-|  +----------------+  +----------------+  +------------------------+  |
-+---------------------------------------------------------------------+
-|                      Storage Layer                                   |
-|  +--------+ +-----------+ +--------+ +-----------+ +-------------+  |
-|  | Redis  | | Graphiti  | | SQLite | | livegrep  | |    Vault    |  |
-|  |  Hot   | |   Warm    | |  Cold  | |   Cold    | |   Archive   |  |
-|  +--------+ +-----------+ +--------+ +-----------+ +-------------+  |
-+---------------------------------------------------------------------+
++-------------------------------------------------------------------------+
+|                          CLAUDE CODE++                                   |
++-------------------------------------------------------------------------+
+|                           Client Layer                                   |
+|  +----------------+  +----------------+  +----------------------------+  |
+|  |  Claude Code  |  |    OpenClaw   |  |   Research Environment    |  |
+|  |     CLI       |  |  Multi-Channel |  |   Voice + Webcam          |  |
+|  |  (Terminal)   |  |   Gateway      |  |   Whiteboard              |  |
+|  +-------+-------+  +-------+--------+  +-------------+-------------+  |
+|          |                  |                         |                 |
+|          +------------------+---------+---------------+                 |
+|                                       |                                 |
+|                           +-----------v-----------+                     |
+|                           |    Shared Memory      |                     |
+|                           |    (Memory MCP)       |                     |
+|                           +-----------+-----------+                     |
+|                                       |                                 |
++-------------------------------------------------------------------------+
+|                           MCP Layer                                      |
+|  +----------------+  +----------------+  +----------------------------+  |
+|  |  Memory MCP   |  | System Ctrl   |  |  External MCPs             |  |
+|  |   (Python)    |  |   (Swift)     |  |  (filesystem, git, etc.)   |  |
+|  +----------------+  +----------------+  +----------------------------+  |
++-------------------------------------------------------------------------+
+|                         Storage Layer                                    |
+|  +--------+ +-----------+ +--------+ +-----------+ +-----------------+  |
+|  | Redis  | | Graphiti  | | SQLite | | livegrep  | |      Vault      |  |
+|  |  Hot   | |   Warm    | |  Cold  | |   Cold    | |     Archive     |  |
+|  +--------+ +-----------+ +--------+ +-----------+ +-----------------+  |
++-------------------------------------------------------------------------+
+|                       Infrastructure                                     |
+|  +--------+ +-----------+ +-----------+ +-----------------------------+ |
+|  | Redis  | |  Neo4j    | | Playwright| |  OpenClaw Gateway           | |
+|  | :6379  | |  :7474    | |  :9222    | |  :18789                     | |
+|  +--------+ +-----------+ +-----------+ +-----------------------------+ |
++-------------------------------------------------------------------------+
 ```
 
 ## Component Architecture
@@ -323,9 +343,62 @@ Claude Code hooks can trigger memory operations:
 - PostToolUse: Suggest storing results
 - Stop: Prompt session save
 
+## OpenClaw Integration
+
+OpenClaw provides multi-channel access to Claude with shared memory:
+
+```
++---------------------------------------------------------------------+
+|                     OpenClaw Gateway                                 |
++---------------------------------------------------------------------+
+|  Channel Adapters                                                    |
+|  +----------+ +----------+ +---------+ +--------+ +---------------+  |
+|  | WhatsApp | | Telegram | | Discord | | Slack  | |   iMessage    |  |
+|  | Baileys  | | Bot API  | | Bot API | | Bolt   | | BlueBubbles   |  |
+|  +----+-----+ +----+-----+ +----+----+ +---+----+ +-------+-------+  |
+|       |            |            |          |              |          |
+|       +------------+------+-----+----------+--------------+          |
+|                           |                                          |
+|                  +--------v--------+                                 |
+|                  |  Agent Router   |                                 |
+|                  +--------+--------+                                 |
+|                           |                                          |
+|           +---------------+---------------+                          |
+|           |                               |                          |
+|  +--------v--------+            +--------v--------+                  |
+|  | memory-mcp-     |            |   LLM Provider  |                  |
+|  | bridge          |            |   (Anthropic)   |                  |
+|  +--------+--------+            +-----------------+                  |
+|           |                                                          |
++---------------------------------------------------------------------+
+            |
+            v
++---------------------------------------------------------------------+
+|                      Memory MCP Server                               |
+|                   (Shared with Claude Code)                          |
++---------------------------------------------------------------------+
+```
+
+### Memory Bridge Flow
+
+1. **Incoming message** arrives via channel (e.g., WhatsApp)
+2. **Auto-Recall**: Memory bridge searches for relevant context
+3. **Context injection**: Relevant memories prepended to prompt
+4. **LLM processing**: Claude generates response with context
+5. **Auto-Capture**: Important info from conversation stored
+6. **Response delivery**: Message sent back to channel
+
+### Shared Memory Benefits
+
+- **Continuity**: Preferences set in terminal available in WhatsApp
+- **Knowledge transfer**: Decisions made via Discord visible in Claude Code
+- **Research mobility**: Start in terminal, continue on phone
+- **Team collaboration**: Share context across channels
+
 ## Related Pages
 
 - [[Memory-MCP]] - Detailed Memory MCP documentation
 - [[Memory-MCP-Tools]] - Complete tool reference (all 20 tools)
 - [[Memory-Tiers]] - Deep dive on tier architecture
+- [[OpenClaw]] - Multi-channel gateway setup
 - [[Configuration]] - Customizing the architecture

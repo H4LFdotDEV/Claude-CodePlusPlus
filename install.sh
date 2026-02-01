@@ -392,14 +392,14 @@ verify_redis_connection() {
     while [ $attempt -le $max_attempts ]; do
         # Try local redis-cli first (for standalone Redis)
         if command -v redis-cli &> /dev/null; then
-            if redis-cli -a "$REDIS_PASSWORD" ping 2>/dev/null | grep -q "PONG"; then
+            if REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli ping 2>/dev/null | grep -q "PONG"; then
                 success "Redis is running (standalone)"
                 return 0
             fi
         fi
 
         # Try Docker container
-        if docker exec "$container_name" redis-cli -a "$REDIS_PASSWORD" ping 2>/dev/null | grep -q "PONG"; then
+        if docker exec -e REDISCLI_AUTH="$REDIS_PASSWORD" "$container_name" redis-cli ping 2>/dev/null | grep -q "PONG"; then
             success "Redis container is running"
             return 0
         fi
@@ -1102,10 +1102,10 @@ verify_installation() {
     # Check Redis
     if [ "$PROFILE" != "minimal" ]; then
         local redis_ok=false
-        if command -v redis-cli &> /dev/null && redis-cli -a "$REDIS_PASSWORD" ping 2>/dev/null | grep -q "PONG"; then
+        if command -v redis-cli &> /dev/null && REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli ping 2>/dev/null | grep -q "PONG"; then
             success "Redis is running (standalone)"
             redis_ok=true
-        elif docker exec "${CONTAINER_PREFIX}-redis" redis-cli -a "$REDIS_PASSWORD" ping 2>/dev/null | grep -q "PONG"; then
+        elif docker exec -e REDISCLI_AUTH="$REDIS_PASSWORD" "${CONTAINER_PREFIX}-redis" redis-cli ping 2>/dev/null | grep -q "PONG"; then
             success "Redis container is running"
             redis_ok=true
         fi
@@ -1136,6 +1136,300 @@ verify_installation() {
     else
         warn "MCP server test failed - check logs at $INSTALL_DIR/logs/memory.log"
     fi
+
+    # Check OpenClaw installation
+    if command -v openclaw &> /dev/null; then
+        local oc_version
+        oc_version=$(openclaw --version 2>/dev/null | head -1)
+        success "OpenClaw installed: $oc_version"
+
+        # Check OpenClaw config
+        if [ -f "$HOME/.openclaw/openclaw.json" ]; then
+            if grep -q "memory-mcp-bridge" "$HOME/.openclaw/openclaw.json" 2>/dev/null; then
+                success "OpenClaw memory-mcp-bridge configured"
+            else
+                warn "OpenClaw config exists but memory-mcp-bridge not enabled"
+            fi
+        fi
+    fi
+}
+
+# ============================================================================
+# OpenClaw Integration
+# ============================================================================
+
+# Detect if OpenClaw submodule exists
+detect_openclaw_submodule() {
+    info "Checking for OpenClaw submodule..."
+
+    OPENCLAW_AVAILABLE="false"
+    OPENCLAW_DIR="$REPO_DIR/openclaw"
+
+    if [ -d "$OPENCLAW_DIR" ] && [ -f "$OPENCLAW_DIR/package.json" ]; then
+        OPENCLAW_AVAILABLE="true"
+        OPENCLAW_VERSION=$(grep '"version"' "$OPENCLAW_DIR/package.json" | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')
+        success "OpenClaw submodule found (version: $OPENCLAW_VERSION)"
+    else
+        info "OpenClaw submodule not found"
+    fi
+
+    export OPENCLAW_AVAILABLE
+    export OPENCLAW_DIR
+}
+
+# Check Node.js version for OpenClaw (requires 22+)
+check_node_for_openclaw() {
+    if ! command -v node &> /dev/null; then
+        warn "Node.js not found - OpenClaw requires Node.js 22+"
+        return 1
+    fi
+
+    local node_major_version
+    node_major_version=$(node -v | sed 's/v\([0-9]*\).*/\1/')
+
+    # Validate we got a number
+    if ! [[ "$node_major_version" =~ ^[0-9]+$ ]]; then
+        warn "Could not determine Node.js version"
+        return 1
+    fi
+
+    if [ "$node_major_version" -lt 22 ]; then
+        warn "Node.js $node_major_version found, but OpenClaw requires Node.js 22+"
+        echo "  Upgrade: https://nodejs.org or 'nvm install 22'"
+        return 1
+    fi
+
+    success "Node.js $node_major_version meets OpenClaw requirements"
+    return 0
+}
+
+# Install OpenClaw globally
+install_openclaw() {
+    info "Installing OpenClaw..."
+
+    # Check Node.js version first
+    if ! check_node_for_openclaw; then
+        warn "Skipping OpenClaw installation due to Node.js version"
+        return 1
+    fi
+
+    # Check for pnpm or npm
+    local pkg_manager="npm"
+    if command -v pnpm &> /dev/null; then
+        pkg_manager="pnpm"
+    fi
+
+    # Install globally
+    info "Installing openclaw@latest via $pkg_manager..."
+    if [ "$pkg_manager" == "pnpm" ]; then
+        pnpm install -g openclaw@latest 2>/dev/null || {
+            warn "pnpm global install failed, trying npm..."
+            npm install -g openclaw@latest 2>/dev/null || {
+                warn "npm global install failed. You may need: npm config set prefix ~/.npm-global"
+                return 1
+            }
+        }
+    else
+        npm install -g openclaw@latest 2>/dev/null || {
+            warn "npm global install failed. You may need: npm config set prefix ~/.npm-global"
+            return 1
+        }
+    fi
+
+    # Verify installation
+    if command -v openclaw &> /dev/null; then
+        local installed_version
+        installed_version=$(openclaw --version 2>/dev/null | head -1)
+        success "OpenClaw installed: $installed_version"
+        return 0
+    else
+        warn "OpenClaw command not found after installation"
+        return 1
+    fi
+}
+
+# Configure OpenClaw with memory-mcp-bridge
+configure_openclaw_integration() {
+    info "Configuring OpenClaw integration..."
+
+    OPENCLAW_CONFIG_DIR="$HOME/.openclaw"
+    OPENCLAW_CONFIG_FILE="$OPENCLAW_CONFIG_DIR/openclaw.json"
+
+    # Create OpenClaw config directory
+    mkdir -p "$OPENCLAW_CONFIG_DIR"
+
+    # Copy template if config doesn't exist
+    if [ ! -f "$OPENCLAW_CONFIG_FILE" ]; then
+        if [ -f "$REPO_DIR/config/openclaw.json.template" ]; then
+            # Process template - replace ~ with actual home directory
+            # Escape special sed characters in INSTALL_DIR
+            local install_dir_escaped
+            install_dir_escaped=$(printf '%s\n' "$INSTALL_DIR" | sed 's/[&/\]/\\&/g')
+            sed "s|~/.claude-code-pp|$install_dir_escaped|g" "$REPO_DIR/config/openclaw.json.template" > "$OPENCLAW_CONFIG_FILE"
+            success "Created $OPENCLAW_CONFIG_FILE"
+        else
+            # Create minimal config with memory-mcp-bridge
+            cat > "$OPENCLAW_CONFIG_FILE" << EOF
+{
+  "agent": {
+    "model": "anthropic/claude-sonnet-4-5"
+  },
+  "gateway": {
+    "port": 18789,
+    "bind": "loopback"
+  },
+  "plugins": {
+    "memory-mcp-bridge": {
+      "enabled": true,
+      "mcpCommand": "$INSTALL_DIR/bin/memory-mcp"
+    }
+  }
+}
+EOF
+            success "Created minimal OpenClaw config"
+        fi
+    else
+        # Update existing config to enable memory-mcp-bridge
+        if command -v jq &> /dev/null; then
+            TEMP_CONFIG=$(mktemp)
+            jq --arg cmd "$INSTALL_DIR/bin/memory-mcp" '
+                .plugins["memory-mcp-bridge"] = {
+                    "enabled": true,
+                    "mcpCommand": $cmd
+                }
+            ' "$OPENCLAW_CONFIG_FILE" > "$TEMP_CONFIG" 2>/dev/null && \
+            mv "$TEMP_CONFIG" "$OPENCLAW_CONFIG_FILE"
+            success "Updated existing OpenClaw config with memory-mcp-bridge"
+        else
+            warn "jq not found - please manually enable memory-mcp-bridge in ~/.openclaw/openclaw.json"
+        fi
+    fi
+
+    # Ensure extensions directory exists for memory-mcp-bridge
+    mkdir -p "$OPENCLAW_CONFIG_DIR/extensions"
+
+    # Copy memory-mcp-bridge extension config if available
+    if [ -d "$OPENCLAW_DIR/extensions/memory-mcp-bridge" ]; then
+        mkdir -p "$OPENCLAW_CONFIG_DIR/extensions/memory-mcp-bridge"
+        cat > "$OPENCLAW_CONFIG_DIR/extensions/memory-mcp-bridge/config.json" << EOF
+{
+  "mcpCommand": "$INSTALL_DIR/bin/memory-mcp",
+  "autoRecall": true,
+  "autoCapture": true,
+  "recallLimit": 5,
+  "recallMinScore": 0.3
+}
+EOF
+        success "Configured memory-mcp-bridge extension"
+    fi
+}
+
+# Setup OpenClaw channels (optional wizard)
+setup_openclaw_channels() {
+    if [ "$IS_REMOTE_INSTALL" == "true" ]; then
+        return 0
+    fi
+
+    echo ""
+    echo -e "${CYAN}OpenClaw Channel Configuration${NC}"
+    echo ""
+    echo "OpenClaw can connect to multiple messaging platforms:"
+    echo "  - WhatsApp (via Baileys web or Twilio)"
+    echo "  - Telegram"
+    echo "  - Discord"
+    echo "  - Slack"
+    echo "  - Signal"
+    echo "  - iMessage (macOS)"
+    echo "  - Matrix"
+    echo "  - And more..."
+    echo ""
+    read -p "Configure messaging channels now? [y/N]: " setup_channels
+    setup_channels=${setup_channels:-N}
+
+    if [[ "$setup_channels" =~ ^[Yy]$ ]]; then
+        if command -v openclaw &> /dev/null; then
+            info "Launching OpenClaw onboarding wizard..."
+            openclaw onboard 2>/dev/null || {
+                warn "OpenClaw onboarding failed. Run manually: openclaw onboard"
+            }
+        else
+            warn "OpenClaw not installed. Run: npm install -g openclaw@latest && openclaw onboard"
+        fi
+    else
+        info "Skipping channel setup. Configure later: openclaw onboard"
+    fi
+}
+
+# Install OpenClaw daemon (optional)
+install_openclaw_daemon() {
+    echo ""
+    read -p "Install OpenClaw daemon (auto-start gateway on login)? [y/N]: " install_daemon
+    install_daemon=${install_daemon:-N}
+
+    if [[ "$install_daemon" =~ ^[Yy]$ ]]; then
+        if command -v openclaw &> /dev/null; then
+            info "Installing OpenClaw daemon..."
+            openclaw daemon install 2>/dev/null || openclaw service install 2>/dev/null || {
+                warn "Daemon installation failed. Run manually: openclaw daemon install"
+                return 1
+            }
+            success "OpenClaw daemon installed"
+        else
+            warn "OpenClaw not installed"
+            return 1
+        fi
+    fi
+}
+
+# Full OpenClaw setup
+setup_openclaw() {
+    # Check if OpenClaw integration is desired
+    if [ "$IS_REMOTE_INSTALL" == "true" ]; then
+        # In remote install, default to yes if submodule exists
+        if [ "$OPENCLAW_AVAILABLE" == "true" ]; then
+            SETUP_OPENCLAW="true"
+        fi
+    else
+        echo ""
+        echo -e "${CYAN}OpenClaw Integration${NC}"
+        echo ""
+        echo "OpenClaw provides multi-channel AI gateway access:"
+        echo "  - Chat with Claude via WhatsApp, Telegram, Discord, Slack, etc."
+        echo "  - Shared memory with Claude Code++ (preferences, decisions, context)"
+        echo "  - Voice integration and mobile apps"
+        echo ""
+
+        if [ "$OPENCLAW_AVAILABLE" == "true" ]; then
+            read -p "Install OpenClaw with shared memory? (Recommended) [Y/n]: " setup_choice
+            setup_choice=${setup_choice:-Y}
+        else
+            read -p "Install OpenClaw with shared memory? [y/N]: " setup_choice
+            setup_choice=${setup_choice:-N}
+        fi
+
+        if [[ "$setup_choice" =~ ^[Yy]$ ]]; then
+            SETUP_OPENCLAW="true"
+        fi
+    fi
+
+    if [ "$SETUP_OPENCLAW" != "true" ]; then
+        info "Skipping OpenClaw installation"
+        return 0
+    fi
+
+    # Install OpenClaw
+    install_openclaw || return 1
+
+    # Configure integration
+    configure_openclaw_integration
+
+    # Optional: Channel setup
+    setup_openclaw_channels
+
+    # Optional: Daemon installation
+    install_openclaw_daemon
+
+    success "OpenClaw integration complete"
 }
 
 # Print summary
@@ -1191,12 +1485,35 @@ print_summary() {
         echo "  docker mcp gateway status       - Check gateway status"
         echo "  docker mcp server enable <name> - Enable additional servers"
     fi
+
+    # OpenClaw information
+    if command -v openclaw &> /dev/null; then
+        echo ""
+        echo -e "${CYAN}OpenClaw Integration:${NC}"
+        echo "  - Config: ~/.openclaw/openclaw.json"
+        echo "  - Memory: Shared with Claude Code++ via memory-mcp-bridge"
+        echo ""
+        echo "OpenClaw commands:"
+        echo "  openclaw gateway run            - Start AI gateway"
+        echo "  openclaw channels status        - Check channel connections"
+        echo "  openclaw onboard                - Configure messaging channels"
+        echo "  openclaw memory stats           - View shared memory statistics"
+    fi
+
     echo ""
     echo "Next steps:"
     echo "  1. Open CAIIDE++ to complete onboarding"
     echo "  2. Or restart Claude Code CLI and run 'memory_stats'"
+    if command -v openclaw &> /dev/null; then
+        echo "  3. Configure OpenClaw channels: openclaw onboard"
+        echo "  4. Start multi-channel gateway: openclaw gateway run"
+    fi
     echo ""
-    echo "Documentation: https://github.com/H4LFdotDEV/Claude-CodePlusPlus/wiki"
+    echo "Documentation:"
+    echo "  - Claude Code++: https://github.com/H4LFdotDEV/Claude-CodePlusPlus/wiki"
+    if command -v openclaw &> /dev/null; then
+        echo "  - OpenClaw: https://docs.openclaw.ai"
+    fi
     echo ""
 }
 
@@ -1210,6 +1527,10 @@ main() {
 
     # Check for Docker MCP Toolkit
     detect_docker_mcp_toolkit
+    echo ""
+
+    # Check for OpenClaw submodule
+    detect_openclaw_submodule
     echo ""
 
     # Decide installation mode
@@ -1288,6 +1609,10 @@ main() {
 
     # Research environment (optional)
     setup_research_env
+    echo ""
+
+    # OpenClaw multi-channel AI gateway (optional)
+    setup_openclaw
     echo ""
 
     verify_installation

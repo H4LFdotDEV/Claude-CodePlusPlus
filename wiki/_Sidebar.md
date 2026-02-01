@@ -14,8 +14,10 @@
 - [[Memory-MCP-Behavioral-Guidelines]]
 
 ### Extensions
+- [[OpenClaw]]
 - [[Prompts-MCP]]
 - [[System-Controller]]
+- [[Research-Environment]]
 
 ### Reference
 - [[API-Reference]]

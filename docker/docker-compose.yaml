@@ -150,7 +150,7 @@ services:
       - claude-code-pp
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=${REDIS_PASSWORD} redis-cli ping"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -262,7 +262,7 @@ services:
     tty: true
     restart: unless-stopped
 
-  # OpenClaw legal research system
+  # OpenClaw multi-channel AI gateway
   openclaw:
     build:
       context: ../openclaw
@@ -270,6 +270,8 @@ services:
     container_name: claude-code-pp-openclaw
     profiles:
       - openclaw
+    ports:
+      - "127.0.0.1:18789:18789"  # Gateway API
     environment:
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
       - NEO4J_URI=bolt://neo4j:7687
@@ -277,14 +279,50 @@ services:
       - NEO4J_PASSWORD=${NEO4J_PASSWORD}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # Memory MCP Bridge configuration
+      - OPENCLAW_PLUGIN_MEMORY_MCP_ENABLED=true
+      - OPENCLAW_PLUGIN_MEMORY_MCP_COMMAND=/app/memory-mcp
     volumes:
       - openclaw-config:/data/config
       - openclaw-sessions:/data/sessions
+      # Share Memory MCP binary with container
+      - ${HOME}/.claude-code-pp/bin:/app:ro
     networks:
       - claude-code-pp
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:18789/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # OpenClaw sandbox browser (for browser automation features)
+  openclaw-sandbox-browser:
+    build:
+      context: ../openclaw
+      dockerfile: Dockerfile.sandbox-browser
+    container_name: claude-code-pp-openclaw-browser
+    profiles:
+      - openclaw
+      - openclaw-browser
+    ports:
+      - "127.0.0.1:9223:9222"  # CDP (9223 to avoid conflict with Playwright's 9222)
+      - "127.0.0.1:5900:5900"  # VNC
+      - "127.0.0.1:6080:6080"  # noVNC web
+    shm_size: 2gb
+    networks:
+      - claude-code-pp
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
 
 volumes:
   neo4j-data:
@@ -329,7 +367,7 @@ networks:
 # Start with containerized Memory MCP:
 #   docker-compose --profile mcp-container up -d
 #
-# Start with OpenClaw legal research:
+# Start with OpenClaw multi-channel gateway:
 #   docker-compose --profile openclaw up -d
 #
 # Start everything:

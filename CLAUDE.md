@@ -1,24 +1,40 @@
 # Claude Code++
 
-An AI-native development environment that extends Claude Code with persistent memory, system control, and intelligent model routing.
+An AI-native development environment that extends Claude Code with persistent memory, system control, multi-channel AI gateway, and intelligent model routing.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      Claude Code CLI                         │
-├─────────────────────────────────────────────────────────────┤
-│  MCP Servers                                                 │
-│  ├── Memory MCP (Python) - Tiered memory system             │
-│  ├── System Controller (Swift) - macOS Accessibility API    │
-│  ├── VoiceMode - Voice conversations                        │
-│  ├── mcp-webcam - Whiteboard/camera vision                  │
-│  └── External MCPs (filesystem, git, browser, etc.)         │
-├─────────────────────────────────────────────────────────────┤
-│  Infrastructure                                              │
-│  ├── Redis - Hot memory cache (port 6379)                   │
-│  └── Neo4j - Knowledge graph (port 7474/7687)               │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                              CLAUDE CODE++                                    │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  CLIENTS                                                                      │
+│  ┌────────────────┐  ┌────────────────┐  ┌────────────────────────────────┐  │
+│  │  Claude Code   │  │    OpenClaw    │  │    Research Environment        │  │
+│  │     CLI        │  │  Multi-Channel │  │   Voice + Webcam Whiteboard    │  │
+│  │                │  │    Gateway     │  │                                │  │
+│  └───────┬────────┘  └───────┬────────┘  └───────────────┬────────────────┘  │
+│          │                   │                           │                   │
+│          └───────────────────┼───────────────────────────┘                   │
+│                              │                                               │
+│                  ┌───────────▼───────────┐                                   │
+│                  │    SHARED MEMORY      │                                   │
+│                  │    (Memory MCP)       │                                   │
+│                  └───────────┬───────────┘                                   │
+│                              │                                               │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  MCP Servers                                                                  │
+│  ├── Memory MCP (Python) - Tiered memory system                              │
+│  ├── System Controller (Swift) - macOS Accessibility API                     │
+│  ├── VoiceMode - Voice conversations                                         │
+│  ├── mcp-webcam - Whiteboard/camera vision                                   │
+│  └── External MCPs (filesystem, git, browser, etc.)                          │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  Infrastructure                                                               │
+│  ├── Redis - Hot memory cache (port 6379)                                    │
+│  ├── Neo4j - Knowledge graph (port 7474/7687)                                │
+│  └── OpenClaw Gateway - Multi-channel AI (port 18789)                        │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Quick Start
@@ -231,6 +247,33 @@ docker-compose -f docker/docker-compose.yaml --profile local-llm up -d
 | neo4j | 7474/7687 | Knowledge graph (HTTP/Bolt) |
 | playwright | 9222 | Browser automation (optional) |
 | ollama | 11434 | Local LLM (optional) |
+| openclaw | 18789 | Multi-channel AI gateway (optional) |
+| openclaw-browser | 9223 | OpenClaw browser sandbox (optional) |
+
+### OpenClaw Integration
+
+OpenClaw provides multi-channel AI gateway access with shared memory:
+
+**Supported Channels:**
+- WhatsApp (Baileys web / Twilio)
+- Telegram, Discord, Slack
+- iMessage, Signal, Matrix
+- And more via extensions
+
+**Memory Bridge:**
+The `memory-mcp-bridge` extension connects OpenClaw to the same Memory MCP server. Preferences learned in Claude Code terminal are instantly available in WhatsApp, and vice versa.
+
+**Configuration:**
+```bash
+# Install and configure OpenClaw
+./install.sh  # Includes OpenClaw option
+
+# Or manually
+npm install -g openclaw@latest
+openclaw onboard
+```
+
+**Config location:** `~/.openclaw/openclaw.json`
 
 ## Troubleshooting
 
