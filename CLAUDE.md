@@ -11,6 +11,8 @@ An AI-native development environment that extends Claude Code with persistent me
 │  MCP Servers                                                 │
 │  ├── Memory MCP (Python) - Tiered memory system             │
 │  ├── System Controller (Swift) - macOS Accessibility API    │
+│  ├── VoiceMode - Voice conversations                        │
+│  ├── mcp-webcam - Whiteboard/camera vision                  │
 │  └── External MCPs (filesystem, git, browser, etc.)         │
 ├─────────────────────────────────────────────────────────────┤
 │  Infrastructure                                              │
@@ -44,10 +46,9 @@ Tiered memory system with automatic promotion/demotion:
 | Tier | Storage | Access Time | Capacity | Use Case |
 |------|---------|-------------|----------|----------|
 | Hot | Redis | <1ms | 1000 items | Active session cache |
-| Warm | Graphiti | <50ms | Relationship-based | Knowledge graph (entities, facts) |
-| Warm | LanceDB | <10ms | 100k+ vectors | Semantic similarity search |
+| Warm | Graphiti/Neo4j | <50ms | Relationship-based | Knowledge graph (entities, facts) |
 | Cold | SQLite | <50ms | Unlimited | Metadata, full-text search |
-| Cold | livegrep | <100ms | All repos | Cross-repository code search |
+| Cold | livegrep | <100ms | All repos | Cross-repository code search (optional, requires `--profile livegrep`) |
 | Archive | Obsidian | <200ms | Unlimited | Human-readable notes |
 
 **MCP Tools:**
@@ -81,12 +82,40 @@ macOS Accessibility API integration for screen reading and system control.
 **Permission Levels:**
 | Level | Name | Capabilities |
 |-------|------|--------------|
-| 0 | Sandboxed | Read-only screen access |
-| 1 | Observer | Screen reading, clipboard read |
-| 2 | Basic | Mouse click, basic keyboard |
-| 3 | Standard | Full keyboard, clipboard write |
-| 4 | Elevated | Window management, app focus |
-| 5 | Unrestricted | All capabilities |
+| 0 | sandboxed | Project files only |
+| 1 | standard | + MCP tools, allowlisted commands |
+| 2 | automation | + AppleScript/JXA for any app |
+| 3 | accessibility | + Full screen control |
+| 4 | administrator | + SSH to remote hosts |
+| 5 | unrestricted | Everything the user can do |
+
+### Research Environment (Voice + Vision)
+
+Room-scale research environment with voice conversations and webcam whiteboard capture.
+
+**Setup:**
+```bash
+./scripts/setup-research-env.sh
+```
+
+**Features:**
+- **VoiceMode** - Hands-free voice conversations with Claude
+- **mcp-webcam** - Show Claude your whiteboard, diagrams, or documents
+- **Session logging** - Automatic organization of research sessions
+
+**Quick Commands:**
+| Command | Description |
+|---------|-------------|
+| `start_research` | Launch webcam + voice mode |
+| `voice` | Start voice conversation only |
+| `webcam-ui` | Open webcam control panel |
+
+**Memory Integration:**
+- Voice transcripts → SQLite (cold tier)
+- Whiteboard captures → Vault (archive tier)
+- Session context → Redis (hot tier)
+
+See [Research Environment Wiki](wiki/Research-Environment.md) for full documentation.
 
 ### LiteLLM Router
 

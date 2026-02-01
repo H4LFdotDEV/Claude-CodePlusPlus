@@ -236,6 +236,112 @@ copy_claude_extensions() {
     fi
 }
 
+# Optional: Setup Research Environment (VoiceMode + Webcam)
+setup_research_env() {
+    echo ""
+    read -p "Would you like to install the Research Environment (voice + whiteboard)? [y/N]: " setup_research
+
+    if [[ "$setup_research" =~ ^[Yy]$ ]]; then
+        info "Setting up Research Environment..."
+
+        # Create research directories
+        RESEARCH_DIR="$HOME/Research/PocketDimension"
+        mkdir -p "$RESEARCH_DIR"/{sessions,diagrams,simulations,documentation,exports}
+        success "Created research directory at $RESEARCH_DIR"
+
+        # Install VoiceMode
+        if command -v uv &> /dev/null; then
+            info "Installing VoiceMode via uv..."
+            uv tool install voice-mode --force 2>/dev/null || warn "VoiceMode install failed"
+            uvx voice-mode-install 2>/dev/null || warn "VoiceMode dependencies may need manual setup"
+        elif command -v pip3 &> /dev/null; then
+            info "Installing VoiceMode via pip..."
+            pip3 install voice-mode 2>/dev/null || warn "VoiceMode install failed"
+        else
+            warn "Could not install VoiceMode - install uv or pip first"
+        fi
+
+        # Add VoiceMode MCP (if claude CLI available)
+        if command -v claude &> /dev/null; then
+            info "Adding VoiceMode to Claude MCP..."
+            claude mcp add --scope user voicemode -- uvx --refresh voice-mode 2>/dev/null || \
+                warn "VoiceMode MCP registration may need manual setup"
+
+            info "Adding webcam MCP to Claude..."
+            claude mcp add-json "webcam" '{"command":"npx","args":["-y","@llmindset/mcp-webcam"]}' 2>/dev/null || \
+                warn "Webcam MCP registration may need manual setup"
+        fi
+
+        # Create research environment config
+        cat > "$HOME/.research-env" << 'EOF'
+# Room-Scale Claude Research Environment Configuration
+# Source this file: source ~/.research-env
+
+# VoiceMode Settings
+export VOICEMODE_SAVE_AUDIO=true
+
+# Research Directory
+export RESEARCH_DIR="$HOME/Research/PocketDimension"
+
+# Aliases for quick access
+alias research="cd $HOME/Research/PocketDimension"
+alias voice="claude converse"
+alias webcam-ui="open http://localhost:3333"
+
+# Function to start a research session
+start_research() {
+    echo "Starting Room-Scale Claude Research Environment..."
+    echo "1. Webcam UI will open at http://localhost:3333"
+    echo "2. Point your camera at your whiteboard"
+    echo "3. Voice mode will start automatically"
+    echo ""
+    echo "Say 'Claude, capture the whiteboard' to save snapshots"
+    echo ""
+
+    # Start webcam server in background
+    npx @llmindset/mcp-webcam &
+    WEBCAM_PID=$!
+
+    # Wait a moment for server to start
+    sleep 2
+
+    # Open webcam UI
+    open http://localhost:3333 2>/dev/null || xdg-open http://localhost:3333 2>/dev/null
+
+    # Start voice conversation
+    claude converse
+
+    # Cleanup when done
+    kill $WEBCAM_PID 2>/dev/null
+}
+
+echo "Research environment loaded. Type 'start_research' to begin."
+EOF
+
+        # Add to shell profile
+        SHELL_RC=""
+        if [ -f "$HOME/.zshrc" ]; then
+            SHELL_RC="$HOME/.zshrc"
+        elif [ -f "$HOME/.bashrc" ]; then
+            SHELL_RC="$HOME/.bashrc"
+        fi
+
+        if [ -n "$SHELL_RC" ]; then
+            if ! grep -q "source ~/.research-env" "$SHELL_RC"; then
+                echo "" >> "$SHELL_RC"
+                echo "# Room-Scale Claude Research Environment" >> "$SHELL_RC"
+                echo "[ -f ~/.research-env ] && source ~/.research-env" >> "$SHELL_RC"
+                success "Added research-env to $SHELL_RC"
+            fi
+        fi
+
+        success "Research environment configured"
+        echo ""
+        echo "Research directory: $RESEARCH_DIR"
+        echo "Start a session: source ~/.research-env && start_research"
+    fi
+}
+
 # Optional: Setup Redis
 setup_redis() {
     echo ""
@@ -345,6 +451,7 @@ print_summary() {
     echo "Optional:"
     echo "  - Start Redis for faster caching: brew services start redis"
     echo "  - Start Docker services: cd docker && docker-compose up -d"
+    echo "  - Research session: source ~/.research-env && start_research"
     echo ""
 }
 
@@ -369,6 +476,9 @@ main() {
     echo ""
 
     setup_redis
+    echo ""
+
+    setup_research_env
     echo ""
 
     verify_installation

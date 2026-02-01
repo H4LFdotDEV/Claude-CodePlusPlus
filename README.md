@@ -9,6 +9,7 @@ Claude Code++ adds enterprise-grade capabilities to Claude Code through MCP (Mod
 - **Memory MCP** - Four-tier persistent memory (Redis → Graphiti → livegrep → Obsidian)
 - **Search MCP** - Multi-layer search (Hound → livegrep → Graphiti → Semantic)
 - **System Controller** - macOS Accessibility API integration
+- **Research Environment** - Voice conversations + webcam whiteboard capture
 - **Infrastructure** - Docker-based services for Redis, Neo4j, and model routing
 
 ## Architecture
@@ -28,9 +29,9 @@ Claude Code++ adds enterprise-grade capabilities to Claude Code through MCP (Mod
 │                                                                              │
 │  SEARCH SYSTEM (How Claude Finds Things)                                     │
 │  ┌──────────┐  ┌───────────┐  ┌───────────┐  ┌───────────────────┐           │
-│  │  Hound   │  │ livegrep  │  │ Graphiti  │  │  Nomic + LanceDB  │           │
-│  │ Project  │  │ Global    │  │ Graph     │  │  Semantic         │           │
-│  │ regex    │  │ regex     │  │ traversal │  │  intent search    │           │
+│  │  SQLite  │  │ livegrep  │  │ Graphiti  │  │  Semantic (TBD)   │           │
+│  │ Full-text│  │ Global    │  │ Graph     │  │  Intent-based     │           │
+│  │ search   │  │ regex(opt)│  │ traversal │  │  (planned)        │           │
 │  └──────────┘  └───────────┘  └───────────┘  └───────────────────┘           │
 │                                                                              │
 │  INFRASTRUCTURE                                                              │
@@ -57,10 +58,10 @@ Claude Code++ adds enterprise-grade capabilities to Claude Code through MCP (Mod
 
 | Layer | Technology | Scope | Use Case |
 |-------|------------|-------|----------|
-| **Project** | Hound | Current project | Fast local regex search |
-| **Global** | livegrep | All projects, all time | Cross-project pattern matching |
+| **Full-text** | SQLite FTS5 | All stored memories | Fast keyword search |
+| **Global** | livegrep (optional) | All projects, all time | Cross-project regex (requires `--profile livegrep`) |
 | **Graph** | Graphiti | Relationship traversal | "What uses this?" queries |
-| **Semantic** | Nomic Embed + LanceDB | Intent-based | "Find authentication code" |
+| **Semantic** | *Planned* | Intent-based | "Find authentication code" (not yet implemented) |
 
 ## Quick Start
 
@@ -210,6 +211,35 @@ docker-compose -f docker/docker-compose.yaml ps
 | redis | 6379 | Hot memory cache |
 | neo4j | 7687 | Knowledge graph (Graphiti) |
 | litellm | 4000 | Model routing |
+
+## Research Environment
+
+Voice and vision integration for hands-free research with whiteboard support.
+
+### Setup
+
+```bash
+./scripts/setup-research-env.sh
+```
+
+### Quick Start
+
+```bash
+# Launch full research environment
+start_research
+
+# Or individually:
+voice          # Start voice conversation
+webcam-ui      # Open webcam control panel
+```
+
+### Features
+
+- **VoiceMode** - Natural voice conversations with Claude
+- **mcp-webcam** - Show diagrams, whiteboards, or documents
+- **Memory integration** - Captures stored in vault, transcripts in SQLite
+
+See [wiki/Research-Environment.md](wiki/Research-Environment.md) for full documentation.
 
 ## Roadmap
 

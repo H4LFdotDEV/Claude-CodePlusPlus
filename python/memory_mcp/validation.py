@@ -6,7 +6,15 @@ import re
 from typing import Any, List, Optional
 
 # Allowed document types
-ALLOWED_DOC_TYPES = frozenset(["code", "note", "reference", "conversation"])
+ALLOWED_DOC_TYPES = frozenset([
+    "code",
+    "note",
+    "reference",
+    "conversation",
+    "transcript",        # Voice transcripts with speaker turns
+    "research_image",    # Whiteboard/webcam captures
+    "research_session"   # Session metadata and summaries
+])
 
 # Max content size: 1MB
 MAX_CONTENT_SIZE = 1048576

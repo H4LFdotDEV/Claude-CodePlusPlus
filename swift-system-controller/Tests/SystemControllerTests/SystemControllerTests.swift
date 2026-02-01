@@ -400,3 +400,314 @@ final class SystemControllerAdditionalTests: XCTestCase {
         XCTAssertTrue(PermissionLevel.unrestricted.rawValue > PermissionLevel.administrator.rawValue)
     }
 }
+
+// MARK: - PermissionManager Tests
+
+final class PermissionManagerTests: XCTestCase {
+
+    var tempDir: URL!
+    var permissionManager: PermissionManager!
+
+    override func setUp() {
+        super.setUp()
+        tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        let configPath = tempDir.appendingPathComponent("permissions.yaml").path
+        permissionManager = PermissionManager(configPath: configPath)
+    }
+
+    override func tearDown() {
+        permissionManager = nil
+        try? FileManager.default.removeItem(at: tempDir)
+        super.tearDown()
+    }
+
+    func testInitialLevelIsSandboxed() {
+        XCTAssertEqual(permissionManager.currentLevel, .sandboxed)
+    }
+
+    func testSetLevel() {
+        permissionManager.setLevel(.standard)
+        XCTAssertEqual(permissionManager.currentLevel, .standard)
+
+        permissionManager.setLevel(.automation)
+        XCTAssertEqual(permissionManager.currentLevel, .automation)
+    }
+
+    func testCheckPermissionAtSameLevel() {
+        permissionManager.setLevel(.standard)
+        XCTAssertTrue(permissionManager.check(.standard))
+    }
+
+    func testCheckPermissionBelowCurrentLevel() {
+        permissionManager.setLevel(.automation)
+        XCTAssertTrue(permissionManager.check(.standard))
+        XCTAssertTrue(permissionManager.check(.sandboxed))
+    }
+
+    func testCheckPermissionAboveCurrentLevel() {
+        permissionManager.setLevel(.standard)
+        XCTAssertFalse(permissionManager.check(.automation))
+        XCTAssertFalse(permissionManager.check(.accessibility))
+    }
+
+    func testSetLevelPersists() {
+        let configPath = tempDir.appendingPathComponent("persist.yaml").path
+        let manager1 = PermissionManager(configPath: configPath)
+        manager1.setLevel(.accessibility)
+
+        // Create new instance with same config path
+        let manager2 = PermissionManager(configPath: configPath)
+        XCTAssertEqual(manager2.currentLevel, .accessibility)
+    }
+
+    func testAllPermissionLevels() {
+        let levels: [PermissionLevel] = [
+            .sandboxed, .standard, .automation,
+            .accessibility, .administrator, .unrestricted
+        ]
+
+        for level in levels {
+            permissionManager.setLevel(level)
+            XCTAssertEqual(permissionManager.currentLevel, level)
+        }
+    }
+
+    func testElevateAlreadyAtLevel() {
+        permissionManager.setLevel(.automation)
+        // Should return true without prompting when already at or above level
+        XCTAssertTrue(permissionManager.elevate(to: .sandboxed, reason: "test"))
+        XCTAssertTrue(permissionManager.elevate(to: .standard, reason: "test"))
+        XCTAssertTrue(permissionManager.elevate(to: .automation, reason: "test"))
+    }
+}
+
+// MARK: - RateLimiter Tests
+
+final class RateLimiterTests: XCTestCase {
+
+    func testAllowClickUnderLimit() {
+        let config = RateLimitConfig(maxClicksPerSecond: 10, maxKeysPerSecond: 1000)
+        let limiter = RateLimiter(config: config)
+
+        // Should allow clicks under the limit
+        for _ in 0..<10 {
+            XCTAssertTrue(limiter.allowClick())
+        }
+    }
+
+    func testAllowClickOverLimit() {
+        let config = RateLimitConfig(maxClicksPerSecond: 5, maxKeysPerSecond: 1000)
+        let limiter = RateLimiter(config: config)
+
+        // Use up the limit
+        for _ in 0..<5 {
+            XCTAssertTrue(limiter.allowClick())
+        }
+
+        // 6th click should be denied
+        XCTAssertFalse(limiter.allowClick())
+    }
+
+    func testAllowKeysUnderLimit() {
+        let config = RateLimitConfig(maxClicksPerSecond: 10, maxKeysPerSecond: 100)
+        let limiter = RateLimiter(config: config)
+
+        // Should allow keys under the limit
+        XCTAssertTrue(limiter.allowKeys(count: 50))
+        XCTAssertTrue(limiter.allowKeys(count: 50))
+    }
+
+    func testAllowKeysOverLimit() {
+        let config = RateLimitConfig(maxClicksPerSecond: 10, maxKeysPerSecond: 100)
+        let limiter = RateLimiter(config: config)
+
+        // Use most of the limit
+        XCTAssertTrue(limiter.allowKeys(count: 90))
+
+        // This would exceed the limit
+        XCTAssertFalse(limiter.allowKeys(count: 20))
+
+        // But this fits
+        XCTAssertTrue(limiter.allowKeys(count: 10))
+    }
+
+    func testReset() {
+        let config = RateLimitConfig(maxClicksPerSecond: 3, maxKeysPerSecond: 100)
+        let limiter = RateLimiter(config: config)
+
+        // Use up limits
+        for _ in 0..<3 {
+            _ = limiter.allowClick()
+        }
+        _ = limiter.allowKeys(count: 100)
+
+        // Should be at limit
+        XCTAssertFalse(limiter.allowClick())
+        XCTAssertFalse(limiter.allowKeys(count: 1))
+
+        // Reset
+        limiter.reset()
+
+        // Should be able to click/type again
+        XCTAssertTrue(limiter.allowClick())
+        XCTAssertTrue(limiter.allowKeys(count: 1))
+    }
+
+    func testDefaultConfig() {
+        let config = RateLimitConfig.default
+        let limiter = RateLimiter(config: config)
+
+        // Default allows 10 clicks per second
+        for _ in 0..<10 {
+            XCTAssertTrue(limiter.allowClick())
+        }
+        XCTAssertFalse(limiter.allowClick())
+    }
+
+    func testConcurrentAccess() {
+        let config = RateLimitConfig(maxClicksPerSecond: 100, maxKeysPerSecond: 1000)
+        let limiter = RateLimiter(config: config)
+
+        let expectation = expectation(description: "Concurrent access")
+        expectation.expectedFulfillmentCount = 10
+
+        // Simulate concurrent access from multiple threads
+        for _ in 0..<10 {
+            DispatchQueue.global().async {
+                for _ in 0..<5 {
+                    _ = limiter.allowClick()
+                }
+                expectation.fulfill()
+            }
+        }
+
+        wait(for: [expectation], timeout: 5.0)
+        // Test passes if no crashes occur (thread safety check)
+    }
+}
+
+// MARK: - ActionLogger Tests
+
+final class ActionLoggerTests: XCTestCase {
+
+    var tempDir: URL!
+    var logPath: String!
+
+    override func setUp() {
+        super.setUp()
+        tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        logPath = tempDir.appendingPathComponent("test.log").path
+    }
+
+    override func tearDown() {
+        try? FileManager.default.removeItem(at: tempDir)
+        super.tearDown()
+    }
+
+    func testLogCreatesFile() {
+        let logger = ActionLogger(path: logPath)
+        logger.log(.windowRead)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: logPath))
+    }
+
+    func testLogWritesEntry() {
+        let logger = ActionLogger(path: logPath)
+        logger.log(.click(point: CGPoint(x: 100, y: 200), button: .left))
+
+        let contents = try? String(contentsOfFile: logPath, encoding: .utf8)
+        XCTAssertNotNil(contents)
+        XCTAssertTrue(contents?.contains("click(left at 100,200)") ?? false)
+    }
+
+    func testGetRecentLogs() {
+        let logger = ActionLogger(path: logPath)
+
+        // Log several actions
+        logger.log(.click(point: CGPoint(x: 10, y: 20), button: .left))
+        logger.log(.type(text: "Hello"))
+        logger.log(.windowRead)
+
+        let logs = logger.getRecentLogs(count: 10)
+        XCTAssertGreaterThanOrEqual(logs.count, 3)
+    }
+
+    func testGetRecentLogsLimit() {
+        let logger = ActionLogger(path: logPath)
+
+        // Log 10 actions
+        for i in 0..<10 {
+            logger.log(.click(point: CGPoint(x: CGFloat(i), y: 0), button: .left))
+        }
+
+        // Request only 5
+        let logs = logger.getRecentLogs(count: 5)
+        XCTAssertLessThanOrEqual(logs.count, 6) // May include empty trailing line
+    }
+
+    func testActionTypeDescriptions() {
+        // Test that all action types produce valid descriptions
+        let actions: [ActionType] = [
+            .click(point: CGPoint(x: 100, y: 200), button: .left),
+            .click(point: CGPoint(x: 100, y: 200), button: .right),
+            .doubleClick(point: CGPoint(x: 50, y: 50)),
+            .type(text: "Hello World"),
+            .hotkey(modifiers: [.cmd, .shift], key: "a"),
+            .screenRead(point: CGPoint(x: 0, y: 0)),
+            .windowRead,
+            .scroll(point: CGPoint(x: 100, y: 100), deltaX: 0, deltaY: -5),
+            .clipboardSet,
+            .focusApp(name: "Safari"),
+            .moveWindow(point: CGPoint(x: 0, y: 0)),
+            .resizeWindow(size: CGSize(width: 800, height: 600))
+        ]
+
+        for action in actions {
+            XCTAssertFalse(action.description.isEmpty)
+        }
+    }
+
+    func testClickActionDescription() {
+        let action = ActionType.click(point: CGPoint(x: 100, y: 200), button: .left)
+        XCTAssertEqual(action.description, "click(left at 100,200)")
+    }
+
+    func testDoubleClickDescription() {
+        let action = ActionType.doubleClick(point: CGPoint(x: 50, y: 100))
+        XCTAssertEqual(action.description, "double_click(at 50,100)")
+    }
+
+    func testTypeDescription() {
+        let action = ActionType.type(text: "Hello World")
+        XCTAssertEqual(action.description, "type(11 chars)")
+    }
+
+    func testHotkeyDescription() {
+        let action = ActionType.hotkey(modifiers: [.cmd, .shift], key: "c")
+        XCTAssertTrue(action.description.contains("command"))
+        XCTAssertTrue(action.description.contains("shift"))
+        XCTAssertTrue(action.description.contains("+c"))
+    }
+
+    func testScrollDescription() {
+        let action = ActionType.scroll(point: CGPoint(x: 100, y: 200), deltaX: 5, deltaY: -10)
+        XCTAssertEqual(action.description, "scroll(at 100,200 delta:5,-10)")
+    }
+
+    func testFocusAppDescription() {
+        let action = ActionType.focusApp(name: "Terminal")
+        XCTAssertEqual(action.description, "focus_app(Terminal)")
+    }
+
+    func testMoveWindowDescription() {
+        let action = ActionType.moveWindow(point: CGPoint(x: 100, y: 50))
+        XCTAssertEqual(action.description, "move_window(to 100,50)")
+    }
+
+    func testResizeWindowDescription() {
+        let action = ActionType.resizeWindow(size: CGSize(width: 1920, height: 1080))
+        XCTAssertEqual(action.description, "resize_window(to 1920x1080)")
+    }
+}

@@ -18,6 +18,7 @@ Claude Code++ transforms Claude from a stateless assistant into a context-aware 
   - [[Memory-MCP-Behavioral-Guidelines]] - How Claude uses memory
   - [[Memory-Tiers]] - Understanding hot/warm/cold/archive storage
 - [[System-Controller]] - macOS accessibility integration
+- [[Research-Environment]] - Voice + webcam whiteboard research mode
 - [[Prompts-MCP]] - Role-based prompting with awesome-chatgpt-prompts
 
 ### Reference

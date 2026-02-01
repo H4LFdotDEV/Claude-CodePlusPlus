@@ -4,6 +4,12 @@
 swift-system-controller/.build
 swift-system-controller/.swiftpm
 
+# Rust/IDE
+IDE/target/
+IDE/macos/.build/
+*.rlib
+*.rmeta
+
 # Python
 __pycache__/
 *.pyc

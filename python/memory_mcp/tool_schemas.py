@@ -197,6 +197,120 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
                 "type": "object",
                 "properties": {}
             }
+        },
+        # Research tools for voice + whiteboard sessions
+        {
+            "name": "research_session_start",
+            "description": (
+                "Start a new research session for voice conversation and whiteboard capture. "
+                "BEGIN A SESSION when: starting a brainstorming session, beginning research work, "
+                "or when the user wants to document an extended exploration. Sessions track "
+                "transcripts, captures, and insights together."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Session name (e.g., 'Pocket Dimension Physics')"},
+                    "focus_area": {"type": "string", "description": "Research focus or topic"},
+                    "participants": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of participants (e.g., ['Jeremiah', 'Claude'])"
+                    }
+                },
+                "required": ["name"]
+            }
+        },
+        {
+            "name": "research_session_end",
+            "description": (
+                "End a research session and generate summary. "
+                "CLOSE A SESSION when: research work is complete, switching to different work, "
+                "or at the end of a voice conversation. Generates a summary, writes to vault, "
+                "and archives all session data."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID to end"},
+                    "summary": {"type": "string", "description": "Session summary"},
+                    "action_items": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of action items from the session"
+                    },
+                    "key_decisions": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Key decisions made during the session"
+                    }
+                },
+                "required": ["session_id"]
+            }
+        },
+        {
+            "name": "research_transcript_store",
+            "description": (
+                "Store a voice transcript segment from a research session. "
+                "STORE TRANSCRIPTS as they come in during voice conversations. Captures speaker "
+                "attribution and timestamps for later review and search."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "Transcript text"},
+                    "speaker": {"type": "string", "description": "Speaker name (default: 'user')"},
+                    "session_id": {"type": "string", "description": "Associated research session"},
+                    "timestamp": {"type": "string", "description": "ISO timestamp of the segment"}
+                },
+                "required": ["text"]
+            }
+        },
+        {
+            "name": "research_capture_store",
+            "description": (
+                "Store a whiteboard or webcam capture from a research session. "
+                "CAPTURE when: the user says 'capture the whiteboard', shows important "
+                "diagrams, or shares visual information. Stores description, OCR text, "
+                "and image path for later retrieval."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "description": {"type": "string", "description": "Description of what was captured"},
+                    "ocr_text": {"type": "string", "description": "Extracted text from the image"},
+                    "image_path": {"type": "string", "description": "Path to the image file"},
+                    "session_id": {"type": "string", "description": "Associated research session"},
+                    "capture_type": {
+                        "type": "string",
+                        "enum": ["whiteboard", "webcam", "screenshot"],
+                        "description": "Type of capture (default: 'whiteboard')"
+                    }
+                },
+                "required": ["description"]
+            }
+        },
+        {
+            "name": "research_search",
+            "description": (
+                "Search across research data including transcripts, captures, and sessions. "
+                "USE THIS to find: past discussions, whiteboard captures, session summaries, "
+                "or any research content. Supports filtering by session and type."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query"},
+                    "session_id": {"type": "string", "description": "Filter to specific session"},
+                    "type": {
+                        "type": "string",
+                        "enum": ["transcript", "research_image", "research_session"],
+                        "description": "Filter by content type"
+                    },
+                    "limit": {"type": "integer", "default": 20}
+                },
+                "required": ["query"]
+            }
         }
     ]
 
@@ -213,6 +327,13 @@ TOOL_VAULT_WRITE = "vault_write"
 TOOL_VAULT_READ = "vault_read"
 TOOL_MEMORY_STATS = "memory_stats"
 
+# Research tool name constants
+TOOL_RESEARCH_SESSION_START = "research_session_start"
+TOOL_RESEARCH_SESSION_END = "research_session_end"
+TOOL_RESEARCH_TRANSCRIPT_STORE = "research_transcript_store"
+TOOL_RESEARCH_CAPTURE_STORE = "research_capture_store"
+TOOL_RESEARCH_SEARCH = "research_search"
+
 # All tool names for iteration
 ALL_TOOL_NAMES = [
     TOOL_MEMORY_STORE,
@@ -224,5 +345,11 @@ ALL_TOOL_NAMES = [
     TOOL_SESSION_RESTORE,
     TOOL_VAULT_WRITE,
     TOOL_VAULT_READ,
-    TOOL_MEMORY_STATS
+    TOOL_MEMORY_STATS,
+    # Research tools
+    TOOL_RESEARCH_SESSION_START,
+    TOOL_RESEARCH_SESSION_END,
+    TOOL_RESEARCH_TRANSCRIPT_STORE,
+    TOOL_RESEARCH_CAPTURE_STORE,
+    TOOL_RESEARCH_SEARCH
 ]

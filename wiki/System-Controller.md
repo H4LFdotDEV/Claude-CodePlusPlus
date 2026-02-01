@@ -63,12 +63,12 @@ The System Controller is a Swift-based MCP server that provides Claude with the 
 
 | Level | Name | Capabilities |
 |-------|------|--------------|
-| 0 | Sandboxed | Read-only screen access |
-| 1 | Observer | Screen reading, clipboard read |
-| 2 | Basic | Mouse click, basic keyboard |
-| 3 | Standard | Full keyboard, clipboard write |
-| 4 | Elevated | Window management, app focus |
-| 5 | Unrestricted | All capabilities |
+| 0 | sandboxed | Project files only |
+| 1 | standard | + MCP tools, allowlisted commands |
+| 2 | automation | + AppleScript/JXA for any app |
+| 3 | accessibility | + Full screen control |
+| 4 | administrator | + SSH to remote hosts |
+| 5 | unrestricted | Everything the user can do |
 
 ## Configuration
 
