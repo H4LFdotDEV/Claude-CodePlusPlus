@@ -1,0 +1,82 @@
+# Docker MCP Gateway Configuration
+# Used when running: docker mcp gateway run --config ./docker/mcp-gateway-config.yaml
+
+# Catalog sources
+catalogs:
+  # Claude Code++ private catalog (local)
+  - name: claude-code-pp
+    path: ./mcp-catalog.yaml
+    priority: 1
+
+  # Docker official MCP catalog (optional, for additional servers)
+  # - name: docker-official
+  #   url: https://hub.docker.com/mcp-catalog
+  #   priority: 2
+
+# Default settings for all servers
+defaults:
+  # All servers join this network
+  network: claude-code-pp
+
+  # Restart policy
+  restart: unless-stopped
+
+  # Resource limits
+  resources:
+    memory: 512m
+    cpu: 1.0
+
+# Secrets management (Docker Desktop handles these)
+secrets:
+  required:
+    - ANTHROPIC_API_KEY
+  optional:
+    - OPENAI_API_KEY
+    - VOYAGE_API_KEY
+    - NEO4J_PASSWORD
+    - REDIS_PASSWORD
+
+# Logging configuration
+logging:
+  level: info
+  format: json
+  # Retain logs for 7 days
+  max_age: 168h
+  # Max log file size before rotation
+  max_size: 100m
+
+# Security settings
+security:
+  # Run containers in sandboxed mode
+  sandbox: true
+
+  # Isolate container networks from host
+  network_isolation: true
+
+  # Don't allow containers to access Docker socket
+  # (Permission broker handles privileged operations)
+  no_docker_socket: true
+
+  # Read-only root filesystem where possible
+  read_only_rootfs: false  # Memory MCP needs to write to /data
+
+# Health monitoring
+health:
+  # Check container health every 30 seconds
+  interval: 30s
+
+  # Mark unhealthy after 3 consecutive failures
+  retries: 3
+
+  # Auto-restart unhealthy containers
+  auto_restart: true
+
+# Startup order and dependencies
+startup:
+  # Start data services first
+  - redis
+  - neo4j
+  # Then MCP servers
+  - memory
+  # Optional services last
+  - openclaw

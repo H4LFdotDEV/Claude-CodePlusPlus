@@ -10,6 +10,7 @@ from .stats import StatsHandler
 from .research import ResearchHandler
 from .tier import TierHandler
 from .proactive import ProactiveHandler
+from .access import AccessHandler
 
 __all__ = [
     "BaseHandler",
@@ -20,4 +21,5 @@ __all__ = [
     "ResearchHandler",
     "TierHandler",
     "ProactiveHandler",
+    "AccessHandler",
 ]

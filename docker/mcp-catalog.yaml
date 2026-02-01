@@ -1,0 +1,127 @@
+# Claude Code++ Private MCP Catalog
+# Register with: docker mcp catalog add ./docker/mcp-catalog.yaml --name claude-code-pp
+# Enable servers: docker mcp server enable claude-code-pp/memory
+
+version: "1.0"
+name: claude-code-pp
+description: Claude Code++ MCP servers for AI-native development with persistent memory
+
+servers:
+  # =============================================================================
+  # Memory MCP - Core tiered memory system
+  # =============================================================================
+  memory:
+    name: Claude Code++ Memory
+    description: |
+      Tiered memory system providing persistent context across sessions.
+      - Hot tier: Redis (session cache, <1ms)
+      - Warm tier: Neo4j/Graphiti (knowledge graph, relationships)
+      - Cold tier: SQLite (metadata, full-text search)
+      - Archive tier: Obsidian vault (human-readable notes)
+    image: ghcr.io/h4lfdotdev/memory-mcp:latest
+    build:
+      context: ..
+      dockerfile: docker/memory-mcp/Dockerfile
+      args:
+        USER_ID: "${USER_ID:-1000}"
+        GROUP_ID: "${GROUP_ID:-1000}"
+    environment:
+      - REDIS_URL
+      - NEO4J_URI
+      - NEO4J_USER
+      - NEO4J_PASSWORD
+      - SQLITE_PATH=/data/sqlite/memories.db
+      - OBSIDIAN_VAULT_PATH=/data/vault
+      - MEMORY_MCP_LOG_LEVEL=${MEMORY_MCP_LOG_LEVEL:-INFO}
+    volumes:
+      # Internal data (container volume)
+      - memory-sqlite:/data/sqlite
+      # User's Obsidian vault (bind mount for cloud sync)
+      - type: bind
+        source: "${OBSIDIAN_VAULT_PATH:-~/.claude-code-pp/memory/vault}"
+        target: /data/vault
+      # Permission broker mounts
+      - type: bind
+        source: "${HOME}/.claude-code-pp/mounts"
+        target: /mounts
+        read_only: true
+      # Permission broker socket
+      - /var/run/claude-broker.sock:/var/run/claude-broker.sock:ro
+    networks:
+      - claude-code-pp
+    labels:
+      category: memory
+      tier: core
+      maintainer: Halfservers LLC
+
+  # =============================================================================
+  # OpenClaw - Multi-channel AI gateway
+  # =============================================================================
+  openclaw:
+    name: OpenClaw AI Gateway
+    description: |
+      Multi-channel AI gateway with messaging platform integrations.
+      Supports WhatsApp, Telegram, Discord, Slack, Signal, and more.
+      Isolated container for security - no privilege escalation possible.
+    image: ghcr.io/h4lfdotdev/openclaw:latest
+    build:
+      context: ../openclaw
+      dockerfile: Dockerfile
+    environment:
+      # Shared data services
+      - REDIS_URL
+      - NEO4J_URI
+      - NEO4J_USER
+      - NEO4J_PASSWORD
+      # API keys
+      - ANTHROPIC_API_KEY
+      - OPENAI_API_KEY
+      # OpenClaw config
+      - OPENCLAW_CONFIG_DIR=/data/config
+      - OPENCLAW_SESSIONS_DIR=/data/sessions
+    volumes:
+      - openclaw-config:/data/config
+      - openclaw-sessions:/data/sessions
+      # Read-only access to Obsidian vault
+      - type: bind
+        source: "${OBSIDIAN_VAULT_PATH:-~/.claude-code-pp/memory/vault}"
+        target: /data/vault
+        read_only: true
+    networks:
+      - claude-code-pp
+    labels:
+      category: gateway
+      tier: optional
+      maintainer: OpenClaw
+
+  # =============================================================================
+  # System Controller - macOS Accessibility API (host-only, not containerized)
+  # =============================================================================
+  system-controller:
+    name: Claude Code++ System Controller
+    description: |
+      macOS Accessibility API for screen reading and system control.
+      NOTE: This runs on the host, not in a container (requires Accessibility permissions).
+    image: ghcr.io/h4lfdotdev/system-controller:latest
+    platform: darwin/arm64,darwin/amd64
+    host_only: true  # Indicates this should run on host, not container
+    labels:
+      category: system
+      tier: optional
+      platform: macos
+      requires: accessibility_permissions
+
+# Named volumes for persistent data
+volumes:
+  memory-sqlite:
+    name: claude-code-pp-memory-sqlite
+  openclaw-config:
+    name: claude-code-pp-openclaw-config
+  openclaw-sessions:
+    name: claude-code-pp-openclaw-sessions
+
+# Shared network for inter-service communication
+networks:
+  claude-code-pp:
+    name: claude-code-pp
+    driver: bridge

@@ -97,6 +97,40 @@ EOF
     export REDIS_URL SQLITE_PATH OBSIDIAN_VAULT_PATH
 }
 
+# Detect Docker MCP Toolkit availability
+detect_docker_mcp_toolkit() {
+    info "Checking for Docker MCP Toolkit..."
+
+    DOCKER_MCP_AVAILABLE="false"
+    DOCKER_MCP_VERSION=""
+
+    if command -v docker &> /dev/null; then
+        # Check if docker mcp subcommand exists
+        if docker mcp --help &>/dev/null 2>&1; then
+            DOCKER_MCP_AVAILABLE="true"
+            DOCKER_MCP_VERSION=$(docker mcp version 2>/dev/null | head -1 || echo "unknown")
+            success "Docker MCP Toolkit found (version: $DOCKER_MCP_VERSION)"
+        else
+            info "Docker MCP Toolkit not installed"
+        fi
+    fi
+
+    export DOCKER_MCP_AVAILABLE
+    export DOCKER_MCP_VERSION
+}
+
+# Detect user IDs for container bind mount compatibility
+detect_user_ids() {
+    # Get current user's UID and GID
+    USER_ID=$(id -u)
+    GROUP_ID=$(id -g)
+
+    export USER_ID
+    export GROUP_ID
+
+    info "Detected UID:GID = $USER_ID:$GROUP_ID"
+}
+
 # Detect system resources and set installation profile
 detect_resources() {
     info "Detecting system resources..."
@@ -134,7 +168,7 @@ detect_resources() {
         echo "  minimal   - SQLite + Vault (lightweight, no Docker)"
         echo "  standard  - + Redis (recommended for most)"
         echo "  full      - + Neo4j/Graphiti (knowledge graph)"
-        echo "  enterprise - + livegrep + LiteLLM (maximum features)"
+        echo "  enterprise - + livegrep (code search, maximum features)"
         echo ""
         read -p "Use recommended profile '$PROFILE'? [Y/n]: " use_recommended
         use_recommended=${use_recommended:-Y}
@@ -830,6 +864,221 @@ EOF
     fi
 }
 
+# Install using Docker MCP Gateway mode
+install_mcp_gateway_mode() {
+    info "Setting up Docker MCP Gateway mode..."
+
+    # Detect user IDs for bind mount permissions
+    detect_user_ids
+
+    # Create MCP Gateway configuration directory
+    mkdir -p "$INSTALL_DIR/mcp-gateway"
+    mkdir -p "$HOME/.claude-code-pp/mounts"
+
+    # Copy MCP catalog to install directory
+    if [ -f "$REPO_DIR/docker/mcp-catalog.yaml" ]; then
+        cp "$REPO_DIR/docker/mcp-catalog.yaml" "$INSTALL_DIR/mcp-gateway/"
+        success "Copied MCP catalog"
+    fi
+
+    # Copy gateway config
+    if [ -f "$REPO_DIR/docker/mcp-gateway-config.yaml" ]; then
+        cp "$REPO_DIR/docker/mcp-gateway-config.yaml" "$INSTALL_DIR/mcp-gateway/"
+        success "Copied gateway config"
+    fi
+
+    # Update .env file with UID/GID
+    if [ -f "$ENV_FILE" ]; then
+        # Add or update USER_ID and GROUP_ID
+        if grep -q "^USER_ID=" "$ENV_FILE"; then
+            sed -i.bak "s/^USER_ID=.*/USER_ID=$USER_ID/" "$ENV_FILE"
+        else
+            echo "USER_ID=$USER_ID" >> "$ENV_FILE"
+        fi
+
+        if grep -q "^GROUP_ID=" "$ENV_FILE"; then
+            sed -i.bak "s/^GROUP_ID=.*/GROUP_ID=$GROUP_ID/" "$ENV_FILE"
+        else
+            echo "GROUP_ID=$GROUP_ID" >> "$ENV_FILE"
+        fi
+
+        rm -f "$ENV_FILE.bak" 2>/dev/null
+        success "Updated .env with UID/GID"
+    fi
+
+    # Register private MCP catalog with Docker MCP
+    info "Registering MCP catalog with Docker..."
+    if docker mcp catalog add "$INSTALL_DIR/mcp-gateway/mcp-catalog.yaml" --name claude-code-pp 2>/dev/null; then
+        success "Registered claude-code-pp catalog"
+    else
+        warn "Could not register catalog - may need manual setup"
+    fi
+
+    # Enable the memory MCP server
+    info "Enabling Memory MCP server..."
+    if docker mcp server enable claude-code-pp/memory 2>/dev/null; then
+        success "Memory MCP server enabled"
+    else
+        warn "Could not enable Memory MCP - may need manual setup"
+    fi
+
+    # Start the MCP gateway
+    info "Starting Docker MCP Gateway..."
+    if docker mcp gateway run --config "$INSTALL_DIR/mcp-gateway/mcp-gateway-config.yaml" -d 2>/dev/null; then
+        success "MCP Gateway started"
+    else
+        warn "MCP Gateway may need manual start"
+        echo "  Run: docker mcp gateway run --config $INSTALL_DIR/mcp-gateway/mcp-gateway-config.yaml"
+    fi
+}
+
+# Configure Claude Code to use Docker MCP Gateway
+configure_claude_mcp_gateway() {
+    info "Configuring Claude Code for MCP Gateway mode..."
+
+    CLAUDE_CONFIG="$HOME/.claude.json"
+
+    # Backup existing config
+    if [ -f "$CLAUDE_CONFIG" ]; then
+        cp "$CLAUDE_CONFIG" "$CLAUDE_CONFIG.backup.$(date +%Y%m%d%H%M%S)"
+        info "Backed up existing config"
+    fi
+
+    # The MCP Gateway handles server registration automatically
+    # We just need to ensure Claude knows to use the gateway
+
+    if command -v jq &> /dev/null; then
+        if [ -f "$CLAUDE_CONFIG" ]; then
+            TEMP_CONFIG=$(mktemp)
+            # Keep existing config but add gateway mode indicator
+            jq '.mcpGateway = {
+                "enabled": true,
+                "socket": "/var/run/docker-mcp-gateway.sock"
+            } |
+            .mcpServers.prompts = {
+                "command": "npx",
+                "args": ["-y", "prompts.chat", "mcp"]
+            }' "$CLAUDE_CONFIG" > "$TEMP_CONFIG"
+            mv "$TEMP_CONFIG" "$CLAUDE_CONFIG"
+        else
+            cat > "$CLAUDE_CONFIG" << 'EOF'
+{
+  "mcpGateway": {
+    "enabled": true,
+    "socket": "/var/run/docker-mcp-gateway.sock"
+  },
+  "mcpServers": {
+    "prompts": {
+      "command": "npx",
+      "args": ["-y", "prompts.chat", "mcp"]
+    }
+  }
+}
+EOF
+        fi
+        success "Configured Claude for MCP Gateway mode"
+    else
+        warn "jq not found - please configure MCP Gateway manually"
+    fi
+}
+
+# Setup Permission Broker daemon
+setup_permission_broker() {
+    info "Setting up Permission Broker daemon..."
+
+    BROKER_DIR="$INSTALL_DIR/permission-broker"
+    mkdir -p "$BROKER_DIR"
+
+    # Copy broker daemon script if it exists
+    if [ -f "$REPO_DIR/scripts/permission-broker.py" ]; then
+        cp "$REPO_DIR/scripts/permission-broker.py" "$BROKER_DIR/"
+        chmod +x "$BROKER_DIR/permission-broker.py"
+        success "Installed Permission Broker"
+    else
+        warn "Permission Broker script not found - skipping"
+        return 0
+    fi
+
+    # Create launchd plist for macOS
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        PLIST_FILE="$HOME/Library/LaunchAgents/com.claude-code-pp.permission-broker.plist"
+        mkdir -p "$HOME/Library/LaunchAgents"
+
+        cat > "$PLIST_FILE" << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.claude-code-pp.permission-broker</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$INSTALL_DIR/venv/bin/python</string>
+        <string>$BROKER_DIR/permission-broker.py</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>$INSTALL_DIR/logs/permission-broker.log</string>
+    <key>StandardErrorPath</key>
+    <string>$INSTALL_DIR/logs/permission-broker.error.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>CLAUDE_CODE_PP_HOME</key>
+        <string>$INSTALL_DIR</string>
+    </dict>
+</dict>
+</plist>
+EOF
+
+        echo ""
+        read -p "Start Permission Broker daemon now? [Y/n]: " start_broker
+        start_broker=${start_broker:-Y}
+
+        if [[ "$start_broker" =~ ^[Yy]$ ]]; then
+            launchctl load "$PLIST_FILE" 2>/dev/null || warn "Could not load launchd plist"
+            success "Permission Broker daemon started"
+        else
+            info "Start later with: launchctl load $PLIST_FILE"
+        fi
+
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        # Create systemd user service for Linux
+        SYSTEMD_DIR="$HOME/.config/systemd/user"
+        mkdir -p "$SYSTEMD_DIR"
+
+        cat > "$SYSTEMD_DIR/claude-permission-broker.service" << EOF
+[Unit]
+Description=Claude Code++ Permission Broker
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=$INSTALL_DIR/venv/bin/python $BROKER_DIR/permission-broker.py
+Restart=on-failure
+Environment=CLAUDE_CODE_PP_HOME=$INSTALL_DIR
+
+[Install]
+WantedBy=default.target
+EOF
+
+        echo ""
+        read -p "Start Permission Broker daemon now? [Y/n]: " start_broker
+        start_broker=${start_broker:-Y}
+
+        if [[ "$start_broker" =~ ^[Yy]$ ]]; then
+            systemctl --user daemon-reload
+            systemctl --user enable claude-permission-broker.service
+            systemctl --user start claude-permission-broker.service
+            success "Permission Broker daemon started"
+        else
+            info "Start later with: systemctl --user start claude-permission-broker.service"
+        fi
+    fi
+}
+
 # Verify installation
 verify_installation() {
     info "Verifying installation..."
@@ -900,6 +1149,11 @@ print_summary() {
     echo ""
     echo "Installation directory: $INSTALL_DIR"
     echo "Profile: $PROFILE"
+    if [ "$USE_MCP_GATEWAY" == "true" ]; then
+        echo "Mode: Docker MCP Gateway (containerized)"
+    else
+        echo "Mode: Traditional (local processes)"
+    fi
     echo ""
     echo "Active services:"
     case $PROFILE in
@@ -924,9 +1178,19 @@ print_summary() {
             echo "  - SQLite (cold storage)"
             echo "  - Vault (archive)"
             echo "  - livegrep (code search)"
-            echo "  - LiteLLM (model routing)"
             ;;
     esac
+    if [ "$USE_MCP_GATEWAY" == "true" ]; then
+        echo ""
+        echo "Docker MCP Gateway:"
+        echo "  - Memory MCP (containerized)"
+        echo "  - Permission Broker (secure privilege escalation)"
+        echo ""
+        echo "Gateway commands:"
+        echo "  docker mcp server list          - List enabled servers"
+        echo "  docker mcp gateway status       - Check gateway status"
+        echo "  docker mcp server enable <name> - Enable additional servers"
+    fi
     echo ""
     echo "Next steps:"
     echo "  1. Open CAIIDE++ to complete onboarding"
@@ -944,6 +1208,31 @@ main() {
     detect_resources
     echo ""
 
+    # Check for Docker MCP Toolkit
+    detect_docker_mcp_toolkit
+    echo ""
+
+    # Decide installation mode
+    USE_MCP_GATEWAY="false"
+    if [ "$DOCKER_MCP_AVAILABLE" == "true" ] && [ "$IS_REMOTE_INSTALL" != "true" ]; then
+        echo ""
+        echo -e "${CYAN}Docker MCP Gateway Detected${NC}"
+        echo ""
+        echo "Docker MCP Gateway provides:"
+        echo "  - Containerized MCP servers for enhanced isolation"
+        echo "  - Easy management via 'docker mcp' commands"
+        echo "  - Permission Broker for secure privilege escalation"
+        echo "  - Better security boundaries for AI tools"
+        echo ""
+        read -p "Use Docker MCP Gateway mode? (Recommended) [Y/n]: " use_gateway
+        use_gateway=${use_gateway:-Y}
+
+        if [[ "$use_gateway" =~ ^[Yy]$ ]]; then
+            USE_MCP_GATEWAY="true"
+            info "Installing in Docker MCP Gateway mode"
+        fi
+    fi
+
     check_prerequisites
     echo ""
 
@@ -954,25 +1243,44 @@ main() {
     generate_secrets
     echo ""
 
-    install_python_package
-    echo ""
+    if [ "$USE_MCP_GATEWAY" == "true" ]; then
+        # Docker MCP Gateway mode installation
+        install_python_package
+        echo ""
 
-    create_wrapper_script
-    echo ""
+        install_mcp_gateway_mode
+        echo ""
 
-    # Start Docker services based on profile
-    start_docker_services
-    echo ""
+        configure_claude_mcp_gateway
+        echo ""
 
-    configure_claude
-    echo ""
+        # Setup Permission Broker for secure privilege escalation
+        setup_permission_broker
+        echo ""
+    else
+        # Traditional installation mode
+        install_python_package
+        echo ""
+
+        create_wrapper_script
+        echo ""
+
+        # Start Docker services based on profile
+        start_docker_services
+        echo ""
+
+        configure_claude
+        echo ""
+    fi
 
     copy_claude_extensions
     echo ""
 
     # Standalone Redis option (for minimal profile without Docker)
-    setup_redis_standalone
-    echo ""
+    if [ "$USE_MCP_GATEWAY" != "true" ]; then
+        setup_redis_standalone
+        echo ""
+    fi
 
     # Install CAIIDE++ IDE
     install_caiide

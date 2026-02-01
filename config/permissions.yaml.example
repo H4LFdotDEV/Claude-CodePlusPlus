@@ -1,0 +1,153 @@
+# Claude Code++ Permission Broker Configuration
+# Copy to ~/.claude-code-pp/config/permissions.yaml
+#
+# This file configures the Permission Broker daemon, which handles
+# access requests from sandboxed containers to host filesystem paths.
+
+version: "1.0.0"
+
+permission_broker:
+  # Unix socket for broker communication
+  # Note: /var/run/ requires root or sudo to create
+  # Falls back to ~/.claude-code-pp/run/broker.sock if not writable
+  socket_path: "/var/run/claude-broker.sock"
+
+  # Audit log location (append-only JSONL format)
+  log_path: "~/.claude-code-pp/logs/access-requests.jsonl"
+
+  # Base directory for temporary mounts
+  mount_base: "/tmp/claude-mounts"
+
+  # Default TTL for approved mounts (in seconds)
+  # After this time, the mount is automatically revoked
+  default_ttl: 3600  # 1 hour
+
+  # Maximum pending requests (prevents DoS)
+  max_pending_requests: 100
+
+  # Cleanup interval for expired mounts (in seconds)
+  cleanup_interval: 300  # 5 minutes
+
+  # Notification settings
+  notifications:
+    # ntfy.sh topic for push notifications (optional)
+    # Leave empty to disable ntfy notifications
+    ntfy_topic: ""
+
+    # ntfy server (default: public ntfy.sh)
+    ntfy_server: "https://ntfy.sh"
+
+    # Always print to console (cannot be disabled)
+    console: true
+
+  # Patterns for automatic approval (regex)
+  # Paths matching these patterns are approved immediately without user interaction
+  # Use with caution - only for truly safe paths
+  auto_approve_patterns:
+    # Project directories (customize for your setup)
+    - "^/tmp/claude-workspace"
+    # - "^/home/\\w+/projects"
+    # - "^/Users/\\w+/Developer"
+
+  # Additional deny patterns (merged with hardcoded list)
+  # These paths are ALWAYS denied, no approval possible
+  additional_deny_patterns:
+    # Custom sensitive paths
+    - "\\.password"
+    - "\\.secret"
+    # - "/path/to/sensitive/data"
+
+# Reference: Hardcoded deny patterns (cannot be overridden)
+# These are always blocked regardless of configuration:
+#
+#   ~/.ssh/          - SSH keys and config
+#   ~/.aws/          - AWS credentials
+#   ~/.gnupg/        - GPG keys
+#   ~/.gpg/          - GPG keys (alternate)
+#   *.env            - Environment files
+#   *.env.*          - Environment variants
+#   secrets.yaml     - Kubernetes secrets
+#   secrets.json     - JSON secrets
+#   credentials.json - Credential files
+#   *.pem            - Certificate keys
+#   *.key            - Private keys
+#   id_rsa           - SSH private keys
+#   id_ed25519       - SSH private keys
+#   id_ecdsa         - SSH private keys
+#   id_dsa           - SSH private keys
+#   ~/.kube/config   - Kubernetes config
+#   ~/.docker/config.json  - Docker credentials
+#   ~/.netrc         - FTP/HTTP credentials
+#   ~/.npmrc         - NPM credentials
+#   ~/.pypirc        - PyPI credentials
+
+# Container trust levels
+# Different containers can have different default behaviors
+container_policies:
+  # Default policy for unknown containers
+  default:
+    auto_approve: false
+    max_ttl: 3600
+    allowed_access_levels:
+      - read
+
+  # Trusted development containers
+  trusted:
+    auto_approve: false  # Still require approval, but with higher TTL
+    max_ttl: 86400      # 24 hours
+    allowed_access_levels:
+      - read
+      - write
+
+  # Example: specific container configuration
+  # "claude-dev-container":
+  #   auto_approve: true
+  #   auto_approve_paths:
+  #     - "^/home/dev/projects"
+  #   max_ttl: 7200
+
+# Access level restrictions
+access_levels:
+  read:
+    description: "Read-only access to files"
+    mount_options:
+      - "ro"
+
+  write:
+    description: "Read-write access to files"
+    mount_options: []
+    requires_explicit_approval: true
+
+  execute:
+    description: "Execute access (for binaries)"
+    mount_options:
+      - "exec"
+    requires_explicit_approval: true
+
+# Audit settings
+audit:
+  # Enable detailed audit logging
+  enabled: true
+
+  # Log successful operations (not just denied)
+  log_success: true
+
+  # Retention period for logs (days, 0 = forever)
+  retention_days: 90
+
+  # Include request details in logs
+  include_details: true
+
+  # Redact paths in logs (for privacy)
+  redact_paths: false
+
+# Rate limiting (per container)
+rate_limits:
+  # Max requests per minute per container
+  requests_per_minute: 30
+
+  # Max concurrent pending requests per container
+  max_concurrent_pending: 5
+
+  # Cooldown after denial (seconds)
+  denial_cooldown: 60

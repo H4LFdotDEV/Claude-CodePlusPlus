@@ -1,0 +1,509 @@
+#!/usr/bin/env bash
+#
+# claude-broker - CLI wrapper for the Permission Broker daemon
+#
+# Usage:
+#   claude-broker start [--debug]     Start the broker daemon
+#   claude-broker stop                Stop the broker daemon
+#   claude-broker status              Check broker health
+#   claude-broker approve <id> [--ttl N]   Approve a pending request
+#   claude-broker deny <id> [--reason MSG] Deny a pending request
+#   claude-broker list [--active]     List pending or active requests
+#   claude-broker revoke <id>         Revoke an active mount
+#   claude-broker logs [--follow]     View audit logs
+#
+# Environment:
+#   CLAUDE_BROKER_SOCKET  Socket path (default: /var/run/claude-broker.sock)
+#   CLAUDE_BROKER_CONFIG  Config path (default: ~/.claude-code-pp/config/permissions.yaml)
+
+set -euo pipefail
+
+# Default paths
+BROKER_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BROKER_SCRIPT="${BROKER_SCRIPT_DIR}/permission-broker.py"
+SOCKET_PATH="${CLAUDE_BROKER_SOCKET:-/var/run/claude-broker.sock}"
+CONFIG_PATH="${CLAUDE_BROKER_CONFIG:-${HOME}/.claude-code-pp/config/permissions.yaml}"
+LOG_PATH="${HOME}/.claude-code-pp/logs/access-requests.jsonl"
+PID_FILE="${HOME}/.claude-code-pp/run/broker.pid"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Print colored message
+print_color() {
+    local color="$1"
+    shift
+    echo -e "${color}$*${NC}"
+}
+
+# Print error and exit
+error() {
+    print_color "$RED" "Error: $*" >&2
+    exit 1
+}
+
+# Print warning
+warn() {
+    print_color "$YELLOW" "Warning: $*" >&2
+}
+
+# Print info
+info() {
+    print_color "$BLUE" "$*"
+}
+
+# Print success
+success() {
+    print_color "$GREEN" "$*"
+}
+
+# Check if broker is running
+is_running() {
+    if [[ -S "$SOCKET_PATH" ]]; then
+        # Try to connect
+        if python3 -c "
+import socket
+import sys
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+try:
+    s.connect('$SOCKET_PATH')
+    s.close()
+    sys.exit(0)
+except:
+    sys.exit(1)
+" 2>/dev/null; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
+# Ensure required directories exist
+ensure_dirs() {
+    mkdir -p "$(dirname "$PID_FILE")"
+    mkdir -p "$(dirname "$LOG_PATH")"
+    mkdir -p "$(dirname "$CONFIG_PATH")"
+}
+
+# Start the broker daemon
+cmd_start() {
+    local debug_flag=""
+
+    # Parse options
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --debug|-d)
+                debug_flag="--debug"
+                shift
+                ;;
+            *)
+                error "Unknown option: $1"
+                ;;
+        esac
+    done
+
+    if is_running; then
+        warn "Broker is already running"
+        exit 0
+    fi
+
+    ensure_dirs
+
+    # Check if script exists
+    if [[ ! -f "$BROKER_SCRIPT" ]]; then
+        error "Broker script not found: $BROKER_SCRIPT"
+    fi
+
+    # Check if socket directory is writable
+    socket_dir="$(dirname "$SOCKET_PATH")"
+    if [[ ! -w "$socket_dir" ]]; then
+        warn "Socket directory not writable: $socket_dir"
+        info "You may need to run: sudo mkdir -p $socket_dir && sudo chown \$USER $socket_dir"
+
+        # Try alternate socket location
+        SOCKET_PATH="${HOME}/.claude-code-pp/run/broker.sock"
+        socket_dir="$(dirname "$SOCKET_PATH")"
+        mkdir -p "$socket_dir"
+        info "Using alternate socket: $SOCKET_PATH"
+    fi
+
+    info "Starting Permission Broker..."
+
+    # Start daemon in background
+    nohup python3 "$BROKER_SCRIPT" \
+        --socket "$SOCKET_PATH" \
+        --config "$CONFIG_PATH" \
+        $debug_flag \
+        start \
+        > "${HOME}/.claude-code-pp/logs/broker.log" 2>&1 &
+
+    local pid=$!
+    echo "$pid" > "$PID_FILE"
+
+    # Wait a moment and check if it started
+    sleep 1
+
+    if is_running; then
+        success "Broker started (PID: $pid)"
+        info "Socket: $SOCKET_PATH"
+    else
+        error "Broker failed to start. Check logs: ${HOME}/.claude-code-pp/logs/broker.log"
+    fi
+}
+
+# Stop the broker daemon
+cmd_stop() {
+    if [[ -f "$PID_FILE" ]]; then
+        local pid
+        pid=$(cat "$PID_FILE")
+
+        if kill -0 "$pid" 2>/dev/null; then
+            info "Stopping broker (PID: $pid)..."
+            kill "$pid"
+
+            # Wait for clean shutdown
+            local count=0
+            while kill -0 "$pid" 2>/dev/null && [[ $count -lt 10 ]]; do
+                sleep 0.5
+                ((count++))
+            done
+
+            if kill -0 "$pid" 2>/dev/null; then
+                warn "Broker didn't stop gracefully, forcing..."
+                kill -9 "$pid" 2>/dev/null || true
+            fi
+
+            rm -f "$PID_FILE"
+            success "Broker stopped"
+        else
+            warn "Broker process not found (stale PID file)"
+            rm -f "$PID_FILE"
+        fi
+    else
+        warn "Broker not running (no PID file)"
+    fi
+
+    # Clean up socket if it exists
+    if [[ -S "$SOCKET_PATH" ]]; then
+        rm -f "$SOCKET_PATH"
+    fi
+}
+
+# Show broker status / health
+cmd_status() {
+    if is_running; then
+        python3 "$BROKER_SCRIPT" --socket "$SOCKET_PATH" health
+    else
+        print_color "$RED" "Broker is not running"
+        exit 1
+    fi
+}
+
+# Approve a request
+cmd_approve() {
+    if [[ $# -lt 1 ]]; then
+        error "Usage: claude-broker approve <request_id> [--ttl SECONDS]"
+    fi
+
+    local request_id="$1"
+    shift
+    local ttl_arg=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --ttl)
+                ttl_arg="$2"
+                shift 2
+                ;;
+            *)
+                error "Unknown option: $1"
+                ;;
+        esac
+    done
+
+    if ! is_running; then
+        error "Broker is not running"
+    fi
+
+    local cmd="python3 $BROKER_SCRIPT --socket $SOCKET_PATH approve $request_id"
+    if [[ -n "$ttl_arg" ]]; then
+        cmd="$cmd --ttl $ttl_arg"
+    fi
+
+    eval "$cmd"
+}
+
+# Deny a request
+cmd_deny() {
+    if [[ $# -lt 1 ]]; then
+        error "Usage: claude-broker deny <request_id> [--reason MSG]"
+    fi
+
+    local request_id="$1"
+    shift
+    local reason_arg=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --reason|-r)
+                reason_arg="$2"
+                shift 2
+                ;;
+            *)
+                error "Unknown option: $1"
+                ;;
+        esac
+    done
+
+    if ! is_running; then
+        error "Broker is not running"
+    fi
+
+    local cmd="python3 $BROKER_SCRIPT --socket $SOCKET_PATH deny $request_id"
+    if [[ -n "$reason_arg" ]]; then
+        cmd="$cmd --reason '$reason_arg'"
+    fi
+
+    eval "$cmd"
+}
+
+# List requests
+cmd_list() {
+    local active_flag=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --active|-a)
+                active_flag="--active"
+                shift
+                ;;
+            *)
+                error "Unknown option: $1"
+                ;;
+        esac
+    done
+
+    if ! is_running; then
+        error "Broker is not running"
+    fi
+
+    python3 "$BROKER_SCRIPT" --socket "$SOCKET_PATH" list $active_flag
+}
+
+# Revoke an active mount
+cmd_revoke() {
+    if [[ $# -lt 1 ]]; then
+        error "Usage: claude-broker revoke <request_id>"
+    fi
+
+    if ! is_running; then
+        error "Broker is not running"
+    fi
+
+    python3 "$BROKER_SCRIPT" --socket "$SOCKET_PATH" revoke "$1"
+}
+
+# View logs
+cmd_logs() {
+    local follow_flag=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --follow|-f)
+                follow_flag="-f"
+                shift
+                ;;
+            --tail|-n)
+                local tail_count="${2:-50}"
+                shift 2 2>/dev/null || shift
+                ;;
+            *)
+                error "Unknown option: $1"
+                ;;
+        esac
+    done
+
+    if [[ ! -f "$LOG_PATH" ]]; then
+        warn "No log file found: $LOG_PATH"
+        exit 0
+    fi
+
+    if [[ -n "$follow_flag" ]]; then
+        tail -f "$LOG_PATH" | while read -r line; do
+            # Pretty print JSON
+            echo "$line" | python3 -m json.tool 2>/dev/null || echo "$line"
+        done
+    else
+        local count="${tail_count:-50}"
+        tail -n "$count" "$LOG_PATH" | while read -r line; do
+            echo "$line" | python3 -m json.tool 2>/dev/null || echo "$line"
+        done
+    fi
+}
+
+# Request access (for testing)
+cmd_request() {
+    if [[ $# -lt 1 ]]; then
+        error "Usage: claude-broker request <path> [--access read|write] [--reason MSG]"
+    fi
+
+    local path="$1"
+    shift
+    local access="read"
+    local reason=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --access|-a)
+                access="$2"
+                shift 2
+                ;;
+            --reason|-r)
+                reason="$2"
+                shift 2
+                ;;
+            *)
+                error "Unknown option: $1"
+                ;;
+        esac
+    done
+
+    if ! is_running; then
+        error "Broker is not running"
+    fi
+
+    # Send request via Python
+    python3 -c "
+import asyncio
+import json
+import socket
+
+async def main():
+    reader, writer = await asyncio.open_unix_connection('$SOCKET_PATH')
+
+    request = {
+        'command': 'request_access',
+        'path': '$path',
+        'access_level': '$access',
+        'reason': '$reason',
+        'container_id': 'cli-test',
+        'container_name': 'CLI Test'
+    }
+
+    writer.write(json.dumps(request).encode())
+    await writer.drain()
+
+    data = await reader.read(65536)
+    response = json.loads(data.decode())
+    print(json.dumps(response, indent=2))
+
+    writer.close()
+    await writer.wait_closed()
+
+asyncio.run(main())
+"
+}
+
+# Show help
+cmd_help() {
+    cat <<EOF
+Permission Broker CLI
+
+Usage: claude-broker <command> [options]
+
+Commands:
+  start [--debug]              Start the broker daemon
+  stop                         Stop the broker daemon
+  status                       Check broker health
+  approve <id> [--ttl N]       Approve a pending request
+  deny <id> [--reason MSG]     Deny a pending request
+  list [--active]              List pending or active requests
+  revoke <id>                  Revoke an active mount
+  logs [--follow]              View audit logs
+  request <path> [opts]        Request access (for testing)
+  help                         Show this help message
+
+Options:
+  --debug, -d                  Enable debug output
+  --ttl N                      Set TTL in seconds for approved mount
+  --reason, -r MSG             Provide reason for denial
+  --active, -a                 Show active mounts instead of pending
+  --follow, -f                 Follow log output
+
+Environment Variables:
+  CLAUDE_BROKER_SOCKET         Socket path (default: /var/run/claude-broker.sock)
+  CLAUDE_BROKER_CONFIG         Config path (default: ~/.claude-code-pp/config/permissions.yaml)
+
+Examples:
+  # Start broker in debug mode
+  claude-broker start --debug
+
+  # Approve a request with 2 hour TTL
+  claude-broker approve abc123 --ttl 7200
+
+  # Deny with reason
+  claude-broker deny abc123 --reason "Path not needed for this task"
+
+  # List all active mounts
+  claude-broker list --active
+
+  # Watch logs in real-time
+  claude-broker logs --follow
+
+  # Test request access to a path
+  claude-broker request /tmp/mydata --access read --reason "Testing"
+EOF
+}
+
+# Main entrypoint
+main() {
+    if [[ $# -lt 1 ]]; then
+        cmd_help
+        exit 1
+    fi
+
+    local command="$1"
+    shift
+
+    case "$command" in
+        start)
+            cmd_start "$@"
+            ;;
+        stop)
+            cmd_stop "$@"
+            ;;
+        status|health)
+            cmd_status "$@"
+            ;;
+        approve)
+            cmd_approve "$@"
+            ;;
+        deny)
+            cmd_deny "$@"
+            ;;
+        list|ls)
+            cmd_list "$@"
+            ;;
+        revoke)
+            cmd_revoke "$@"
+            ;;
+        logs|log)
+            cmd_logs "$@"
+            ;;
+        request|req)
+            cmd_request "$@"
+            ;;
+        help|--help|-h)
+            cmd_help
+            ;;
+        *)
+            error "Unknown command: $command\nRun 'claude-broker help' for usage."
+            ;;
+    esac
+}
+
+main "$@"

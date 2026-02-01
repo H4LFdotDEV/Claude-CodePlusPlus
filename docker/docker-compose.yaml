@@ -29,6 +29,8 @@ services:
       # Performance tuning
       - NEO4J_server_threads_worker__count=4
       - NEO4J_db_transaction_timeout=60s
+    networks:
+      - claude-code-pp
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || exit 1"]
@@ -57,6 +59,8 @@ services:
       - "127.0.0.1:9999:9999"
     volumes:
       - livegrep-data:/data
+    networks:
+      - claude-code-pp
     profiles:
       - livegrep
     restart: unless-stopped
@@ -89,6 +93,8 @@ services:
     depends_on:
       livegrep-backend:
         condition: service_healthy
+    networks:
+      - claude-code-pp
     profiles:
       - livegrep
     restart: unless-stopped
@@ -120,6 +126,8 @@ services:
     environment:
       - IS_PERSISTENT=TRUE
       - ANONYMIZED_TELEMETRY=FALSE
+    networks:
+      - claude-code-pp
     profiles:
       - legacy
     restart: unless-stopped
@@ -138,6 +146,8 @@ services:
     volumes:
       - redis-data:/data
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD required}
+    networks:
+      - claude-code-pp
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
@@ -163,6 +173,8 @@ services:
     ports:
       - "127.0.0.1:9222:9222"
     shm_size: 2gb
+    networks:
+      - claude-code-pp
     profiles:
       - browser
     restart: unless-stopped
@@ -175,6 +187,8 @@ services:
       - "127.0.0.1:11434:11434"
     volumes:
       - ollama-data:/root/.ollama
+    networks:
+      - claude-code-pp
     profiles:
       - local-llm
     restart: unless-stopped
@@ -195,6 +209,8 @@ services:
     volumes:
       - ${HOME}/projects:/projects:ro
       - test-results:/results
+    networks:
+      - claude-code-pp
     profiles:
       - testing
     restart: "no"
@@ -206,9 +222,69 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${HOME}/projects:/projects
+    networks:
+      - claude-code-pp
     profiles:
       - cicd
     restart: "no"
+
+  # Memory MCP server (containerized)
+  memory-mcp:
+    build:
+      context: ..
+      dockerfile: docker/memory-mcp/Dockerfile
+      args:
+        USER_ID: ${USER_ID:-1000}
+        GROUP_ID: ${GROUP_ID:-1000}
+    container_name: claude-code-pp-memory-mcp
+    profiles:
+      - mcp-container
+    environment:
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+      - SQLITE_PATH=/data/sqlite/memories.db
+      - OBSIDIAN_VAULT_PATH=/data/vault
+    volumes:
+      - memory-sqlite:/data/sqlite
+      - ${OBSIDIAN_VAULT_PATH:-~/.claude-code-pp/memory/vault}:/data/vault
+      - ~/.claude-code-pp/mounts:/mounts:ro
+      - /var/run/claude-broker.sock:/var/run/claude-broker.sock:ro
+    networks:
+      - claude-code-pp
+    depends_on:
+      redis:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+
+  # OpenClaw legal research system
+  openclaw:
+    build:
+      context: ../openclaw
+      dockerfile: Dockerfile
+    container_name: claude-code-pp-openclaw
+    profiles:
+      - openclaw
+    environment:
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - openclaw-config:/data/config
+      - openclaw-sessions:/data/sessions
+    networks:
+      - claude-code-pp
+    depends_on:
+      - redis
+    restart: unless-stopped
 
 volumes:
   neo4j-data:
@@ -225,10 +301,16 @@ volumes:
     name: claude-code-pp-ollama-data
   test-results:
     name: claude-code-pp-test-results
+  memory-sqlite:
+    name: claude-code-pp-memory-sqlite
+  openclaw-config:
+    name: claude-code-pp-openclaw-config
+  openclaw-sessions:
+    name: claude-code-pp-openclaw-sessions
 
 networks:
-  default:
-    name: claude-code-pp-network
+  claude-code-pp:
+    driver: bridge
 
 # Usage:
 #
@@ -244,8 +326,14 @@ networks:
 # Start with local LLM:
 #   docker-compose --profile local-llm up -d
 #
+# Start with containerized Memory MCP:
+#   docker-compose --profile mcp-container up -d
+#
+# Start with OpenClaw legal research:
+#   docker-compose --profile openclaw up -d
+#
 # Start everything:
-#   docker-compose --profile livegrep --profile browser --profile local-llm --profile testing --profile cicd up -d
+#   docker-compose --profile livegrep --profile browser --profile local-llm --profile testing --profile cicd --profile mcp-container --profile openclaw up -d
 #
 # Stop all:
 #   docker-compose down
