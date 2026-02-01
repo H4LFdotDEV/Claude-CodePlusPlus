@@ -18,7 +18,7 @@ from .vault_manager import VaultManager
 from .redis_client import RedisClient, REDIS_AVAILABLE
 from .embedding_provider import get_embedding_provider
 from .tool_schemas import get_tool_schemas
-from .handlers import MemoryHandler, SessionHandler, VaultHandler, StatsHandler, ResearchHandler, TierHandler
+from .handlers import MemoryHandler, SessionHandler, VaultHandler, StatsHandler, ResearchHandler, TierHandler, ProactiveHandler
 from .graphiti_manager import GraphitiManager, GRAPHITI_AVAILABLE
 from .livegrep_client import LivegrepClient, HTTPX_AVAILABLE
 from .tier_manager import TierManager
@@ -154,6 +154,7 @@ class MemoryMCPServer:
         self._stats_handler = StatsHandler(**handler_kwargs)
         self._research_handler = ResearchHandler(**handler_kwargs)
         self._tier_handler = TierHandler(**handler_kwargs)
+        self._proactive_handler = ProactiveHandler(**handler_kwargs)
 
     # MCP Protocol Methods
 
@@ -219,7 +220,11 @@ class MemoryMCPServer:
             "search_facts": self._tier_handler.search_facts,
             "code_search": self._tier_handler.code_search,
             "search_function": self._tier_handler.search_function,
-            "search_class": self._tier_handler.search_class
+            "search_class": self._tier_handler.search_class,
+            # Proactive tools (memU-inspired continuous learning)
+            "proactive_status": self._handle_proactive_status,
+            "extract_insights": self._handle_extract_insights,
+            "configure_proactive": self._handle_configure_proactive,
         }
 
         handler = tool_dispatch.get(name)
@@ -242,6 +247,40 @@ class MemoryMCPServer:
         except Exception as e:
             logger.error(f"Error in tool {name}: {e}", exc_info=True)
             return {"content": [{"type": "text", "text": f"Error: {str(e)}"}], "isError": True}
+
+    # Proactive tool wrappers (async handlers need sync wrappers)
+
+    def _handle_proactive_status(self, arguments: Dict) -> Dict:
+        """Sync wrapper for proactive_status."""
+        from .async_utils import run_async
+        return run_async(
+            self._proactive_handler.handle_proactive_status(
+                include_recent=arguments.get("include_recent", True),
+                limit=arguments.get("limit", 10),
+            )
+        )
+
+    def _handle_extract_insights(self, arguments: Dict) -> Dict:
+        """Sync wrapper for extract_insights."""
+        from .async_utils import run_async
+        return run_async(
+            self._proactive_handler.handle_extract_insights(
+                text=arguments.get("text", ""),
+                context=arguments.get("context"),
+                immediate=arguments.get("immediate", True),
+            )
+        )
+
+    def _handle_configure_proactive(self, arguments: Dict) -> Dict:
+        """Sync wrapper for configure_proactive."""
+        from .async_utils import run_async
+        return run_async(
+            self._proactive_handler.handle_configure_proactive(
+                min_confidence=arguments.get("min_confidence"),
+                enabled=arguments.get("enabled"),
+                queue_enabled=arguments.get("queue_enabled"),
+            )
+        )
 
     # MCP Server Loop
 

@@ -67,10 +67,10 @@ class TestSchemaStructure:
 class TestToolCoverage:
     """Test that all expected tools are defined."""
 
-    def test_exactly_20_tools_defined(self):
-        """Test that exactly 20 tools are defined (10 core + 5 research + 5 tier)."""
+    def test_exactly_23_tools_defined(self):
+        """Test that exactly 23 tools are defined (10 core + 5 research + 5 tier + 3 proactive)."""
         schemas = get_tool_schemas()
-        assert len(schemas) == 20
+        assert len(schemas) == 23
 
     def test_all_expected_tools_present(self):
         """Test that all expected tools are in schemas."""
@@ -225,7 +225,7 @@ class TestToolConstants:
 
     def test_all_tool_names_constant(self):
         """Test ALL_TOOL_NAMES constant."""
-        assert len(ALL_TOOL_NAMES) == 20  # 10 core + 5 research + 5 tier
+        assert len(ALL_TOOL_NAMES) == 23  # 10 core + 5 research + 5 tier + 3 proactive
         assert TOOL_MEMORY_STORE in ALL_TOOL_NAMES
         assert TOOL_MEMORY_SEARCH in ALL_TOOL_NAMES
         assert TOOL_SESSION_SAVE in ALL_TOOL_NAMES

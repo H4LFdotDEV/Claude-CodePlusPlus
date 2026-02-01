@@ -9,6 +9,7 @@ from .vault import VaultHandler
 from .stats import StatsHandler
 from .research import ResearchHandler
 from .tier import TierHandler
+from .proactive import ProactiveHandler
 
 __all__ = [
     "BaseHandler",
@@ -18,4 +19,5 @@ __all__ = [
     "StatsHandler",
     "ResearchHandler",
     "TierHandler",
+    "ProactiveHandler",
 ]

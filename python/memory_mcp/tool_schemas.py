@@ -422,6 +422,88 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
                 },
                 "required": ["name"]
             }
+        },
+        # Proactive tools (memU-inspired continuous learning)
+        {
+            "name": "proactive_status",
+            "description": (
+                "Get the status of the proactive insight extraction system. "
+                "Shows queue status, recent insights, and extraction statistics. "
+                "Use this to monitor automatic learning and debug extraction issues."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "include_recent": {
+                        "type": "boolean",
+                        "description": "Include recent extracted insights",
+                        "default": True
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max recent insights to return",
+                        "default": 10
+                    }
+                }
+            }
+        },
+        {
+            "name": "extract_insights",
+            "description": (
+                "Manually trigger insight extraction from text. Normally insights are "
+                "extracted automatically, but use this to explicitly extract from specific "
+                "content. Detects preferences, decisions, corrections, error solutions, "
+                "and context without requiring explicit tagging."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "description": "Text to extract insights from"
+                    },
+                    "context": {
+                        "type": "object",
+                        "description": "Optional context (project, session_id)",
+                        "properties": {
+                            "project": {"type": "string"},
+                            "session_id": {"type": "string"}
+                        }
+                    },
+                    "immediate": {
+                        "type": "boolean",
+                        "description": "Process immediately (true) or queue for background (false)",
+                        "default": True
+                    }
+                },
+                "required": ["text"]
+            }
+        },
+        {
+            "name": "configure_proactive",
+            "description": (
+                "Configure proactive extraction settings. Adjust confidence thresholds, "
+                "enable/disable automatic extraction, and set processing parameters."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "min_confidence": {
+                        "type": "number",
+                        "description": "Minimum confidence threshold (0.0-1.0)",
+                        "minimum": 0.0,
+                        "maximum": 1.0
+                    },
+                    "enabled": {
+                        "type": "boolean",
+                        "description": "Enable/disable automatic extraction"
+                    },
+                    "queue_enabled": {
+                        "type": "boolean",
+                        "description": "Enable/disable background queue processing"
+                    }
+                }
+            }
         }
     ]
 
@@ -452,6 +534,11 @@ TOOL_CODE_SEARCH = "code_search"
 TOOL_SEARCH_FUNCTION = "search_function"
 TOOL_SEARCH_CLASS = "search_class"
 
+# Proactive tool name constants (memU-inspired)
+TOOL_PROACTIVE_STATUS = "proactive_status"
+TOOL_EXTRACT_INSIGHTS = "extract_insights"
+TOOL_CONFIGURE_PROACTIVE = "configure_proactive"
+
 # All tool names for iteration
 ALL_TOOL_NAMES = [
     TOOL_MEMORY_STORE,
@@ -475,5 +562,9 @@ ALL_TOOL_NAMES = [
     TOOL_SEARCH_FACTS,
     TOOL_CODE_SEARCH,
     TOOL_SEARCH_FUNCTION,
-    TOOL_SEARCH_CLASS
+    TOOL_SEARCH_CLASS,
+    # Proactive tools (memU-inspired)
+    TOOL_PROACTIVE_STATUS,
+    TOOL_EXTRACT_INSIGHTS,
+    TOOL_CONFIGURE_PROACTIVE,
 ]

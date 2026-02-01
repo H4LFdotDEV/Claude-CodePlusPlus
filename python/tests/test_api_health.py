@@ -698,11 +698,11 @@ class TestMCPProtocolCompliance:
         assert "capabilities" in result
 
     def test_list_tools_returns_all_tools(self, mcp_server):
-        """Test list_tools returns all 20 tools (10 core + 5 research + 5 tier)."""
+        """Test list_tools returns all 23 tools (10 core + 5 research + 5 tier + 3 proactive)."""
         result = mcp_server.handle_list_tools()
 
         assert "tools" in result
-        assert len(result["tools"]) == 20
+        assert len(result["tools"]) == 23
 
         expected_tools = [
             # Core tools
@@ -714,7 +714,9 @@ class TestMCPProtocolCompliance:
             "research_transcript_store", "research_capture_store", "research_search",
             # Tier tools
             "search_entities", "search_facts", "code_search",
-            "search_function", "search_class"
+            "search_function", "search_class",
+            # Proactive tools (memU-inspired)
+            "proactive_status", "extract_insights", "configure_proactive"
         ]
 
         tool_names = [t["name"] for t in result["tools"]]

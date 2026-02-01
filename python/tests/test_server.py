@@ -33,7 +33,7 @@ class TestMemoryMCPServer:
         result = mcp_server.handle_list_tools()
         assert "tools" in result
         tools = result["tools"]
-        assert len(tools) == 20  # 10 core + 5 research + 5 tier
+        assert len(tools) == 23  # 10 core + 5 research + 5 tier + 3 proactive
 
         tool_names = [t["name"] for t in tools]
         # Core tools

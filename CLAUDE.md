@@ -309,10 +309,18 @@ claude-code-pp/
 ├── .claude/                   # Claude Code extensions
 │   ├── agents/               # Custom agents
 │   ├── commands/             # Slash commands
+│   ├── plans/                # Implementation plans (project-local)
 │   ├── rules/                # Context rules
 │   └── skills/               # Complex workflows
 └── Archive/                   # Reference documentation
 ```
+
+### Plan Storage
+
+Implementation plans are stored in `.claude/plans/` within the project directory (not user home `~/.claude/plans/`). This ensures plans are:
+- Version controlled with the project
+- Accessible to all contributors
+- Persistent across machines
 
 ## Memory MCP Integration
 
