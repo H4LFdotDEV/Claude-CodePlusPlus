@@ -133,7 +133,6 @@ docker-compose up -d
 This starts:
 - Redis (port 6379) - Hot cache
 - Neo4j (port 7474/7687) - Knowledge graph
-- LiteLLM (port 4000) - Model routing
 
 With optional profiles:
 ```bash

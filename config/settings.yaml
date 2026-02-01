@@ -111,44 +111,6 @@ embeddings:
   
   track_usage: true
 
-# LiteLLM Configuration
-litellm:
-  enabled: true
-  proxy_url: "http://localhost:4000"
-  
-  # Model routing
-  routing:
-    default: "claude-3-5-sonnet"
-    
-    rules:
-      - task: "simple_search"
-        model: "local/gemma"
-        max_cost: 0
-      
-      - task: "quick_question"
-        model: "claude-3-5-haiku"
-        max_cost: 0.01
-      
-      - task: "code_generation"
-        model: "claude-3-5-sonnet"
-        max_cost: 0.10
-      
-      - task: "architecture"
-        model: "claude-3-opus"
-        max_cost: 0.50
-  
-  # Cost limits
-  limits:
-    per_request: 1.00
-    per_hour: 10.00
-    per_day: 50.00
-  
-  # Observability
-  observability:
-    track_tokens: true
-    track_latency: true
-    track_cache_hits: true
-
 # Template Expansion
 expansion:
   enabled: true
@@ -200,18 +162,14 @@ docker:
   compose_file: "~/.claude-code-pp/docker-compose.yaml"
   
   services:
-    chromadb:
-      enabled: true
-      port: 8000
-    
     redis:
       enabled: true
       port: 6379
-    
-    litellm:
+
+    neo4j:
       enabled: true
-      port: 4000
-    
+      port: 7687
+
     playwright:
       enabled: false
       port: 9222

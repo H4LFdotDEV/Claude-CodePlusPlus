@@ -17,8 +17,7 @@ An AI-native development environment that extends Claude Code with persistent me
 ├─────────────────────────────────────────────────────────────┤
 │  Infrastructure                                              │
 │  ├── Redis - Hot memory cache (port 6379)                   │
-│  ├── Neo4j - Knowledge graph (port 7687)                    │
-│  └── LiteLLM - Model routing (port 4000)                    │
+│  └── Neo4j - Knowledge graph (port 7474/7687)               │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -162,16 +161,6 @@ The memory system uses automatic tier promotion based on access patterns:
 
 **Automatic Promotion:** Documents accessed 5+ times are promoted to warm tier (Graphiti knowledge graph). Access tracking uses LRU eviction (max 10k entries) with Redis distributed tracking when available.
 
-### LiteLLM Router
-
-Intelligent model routing with cost optimization.
-
-**Configured Models:**
-- `claude-opus-4-5-20251101` - Complex reasoning
-- `claude-sonnet-4-5-20251101` - Main development
-- `gpt-4o` - Fallback/comparison
-- `ollama/llama3.2` - Local inference
-
 ## Configuration
 
 ### Directory Structure
@@ -180,11 +169,9 @@ Intelligent model routing with cost optimization.
 ~/.claude-code-pp/
 ├── config/
 │   ├── settings.yaml      # Main configuration
-│   ├── mcp-servers.json   # MCP server definitions
-│   └── litellm.yaml       # Model routing config
+│   └── mcp-servers.json   # MCP server definitions
 ├── memory/
 │   ├── sqlite/            # Metadata and FTS
-│   ├── lancedb/           # Vector embeddings
 │   └── vault/             # Obsidian-compatible notes
 ├── logs/
 └── cache/
@@ -242,7 +229,6 @@ docker-compose -f docker/docker-compose.yaml --profile local-llm up -d
 |---------|------|---------|
 | redis | 6379 | Hot memory cache |
 | neo4j | 7474/7687 | Knowledge graph (HTTP/Bolt) |
-| litellm | 4000 | Model routing |
 | playwright | 9222 | Browser automation (optional) |
 | ollama | 11434 | Local LLM (optional) |
 
@@ -272,15 +258,6 @@ docker-compose -f docker/docker-compose.yaml logs
 
 # Restart specific service
 docker-compose -f docker/docker-compose.yaml restart redis
-```
-
-### LiteLLM routing errors
-```bash
-# Test endpoint
-curl http://localhost:4000/health
-
-# Check configured models
-curl http://localhost:4000/v1/models
 ```
 
 ## Development

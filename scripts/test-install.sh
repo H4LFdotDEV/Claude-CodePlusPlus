@@ -211,16 +211,6 @@ test_secret_generation_passwords_set() {
         return 1
     fi
 
-    if [ -z "${LITELLM_MASTER_KEY:-}" ]; then
-        echo "LITELLM_MASTER_KEY not set"
-        return 1
-    fi
-
-    if [[ ! "$LITELLM_MASTER_KEY" =~ ^sk-litellm- ]]; then
-        echo "LITELLM_MASTER_KEY has wrong prefix"
-        return 1
-    fi
-
     return 0
 }
 
@@ -278,7 +268,6 @@ test_docker_compose_valid() {
         # Set required env vars for validation
         export NEO4J_PASSWORD="test"
         export REDIS_PASSWORD="test"
-        export LITELLM_MASTER_KEY="sk-litellm-test"
         export ANTHROPIC_API_KEY=""
         export OPENAI_API_KEY=""
 

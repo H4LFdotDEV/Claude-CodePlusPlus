@@ -40,11 +40,6 @@ generate_secret() {
     openssl rand -hex "$length"
 }
 
-# Generate a LiteLLM-style API key
-generate_litellm_key() {
-    echo "sk-litellm-$(openssl rand -hex 16)"
-}
-
 # Generate a UUID v4
 generate_uuid() {
     if command -v uuidgen &> /dev/null; then
@@ -109,17 +104,6 @@ generate_all_secrets() {
         log_success "Generated POSTGRES_PASSWORD"
     fi
 
-    # LiteLLM
-    if [ "$mode" = "create" ] || [ -z "${LITELLM_MASTER_KEY:-}" ]; then
-        LITELLM_MASTER_KEY=$(generate_litellm_key)
-        log_success "Generated LITELLM_MASTER_KEY"
-    fi
-
-    if [ "$mode" = "create" ] || [ -z "${LITELLM_SALT_KEY:-}" ]; then
-        LITELLM_SALT_KEY=$(generate_secret 32)
-        log_success "Generated LITELLM_SALT_KEY"
-    fi
-
     # Session secrets
     if [ "$mode" = "create" ] || [ -z "${SESSION_SECRET:-}" ]; then
         SESSION_SECRET=$(generate_secret 32)
@@ -179,14 +163,6 @@ POSTGRES_DB=claude_code_pp
 DATABASE_URL=postgresql://claude_code_pp:$POSTGRES_PASSWORD@localhost:5432/claude_code_pp
 
 # =============================================================================
-# LITELLM MODEL ROUTER
-# =============================================================================
-
-LITELLM_MASTER_KEY=$LITELLM_MASTER_KEY
-LITELLM_SALT_KEY=$LITELLM_SALT_KEY
-LITELLM_BASE_URL=http://localhost:4000
-
-# =============================================================================
 # SECURITY KEYS
 # =============================================================================
 
@@ -221,7 +197,6 @@ VOYAGE_API_KEY=\${VOYAGE_API_KEY:-}
 
 # Memory storage
 SQLITE_PATH=$CLAUDE_CODE_PP_DIR/memory/sqlite/memories.db
-LANCEDB_PATH=$CLAUDE_CODE_PP_DIR/memory/lancedb
 
 # Obsidian vault for human-readable notes
 OBSIDIAN_VAULT_PATH=$CLAUDE_CODE_PP_DIR/memory/vault
@@ -265,13 +240,6 @@ services:
   neo4j:
     environment:
       - NEO4J_AUTH=neo4j/\${NEO4J_PASSWORD}
-
-  litellm:
-    environment:
-      - LITELLM_MASTER_KEY=\${LITELLM_MASTER_KEY}
-      - LITELLM_SALT_KEY=\${LITELLM_SALT_KEY}
-      - ANTHROPIC_API_KEY=\${ANTHROPIC_API_KEY}
-      - OPENAI_API_KEY=\${OPENAI_API_KEY}
 EOF
 
     chmod 600 "$override_file"

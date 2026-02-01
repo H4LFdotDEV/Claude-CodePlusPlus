@@ -140,8 +140,7 @@ Default directory layout:
 ├── bin/
 │   └── memory-mcp          # Compiled MCP server
 ├── config/
-│   ├── settings.yaml       # Main configuration
-│   └── litellm.yaml        # Model routing (optional)
+│   └── settings.yaml       # Main configuration
 ├── memory/
 │   ├── sqlite/
 │   │   └── memories.db     # SQLite database

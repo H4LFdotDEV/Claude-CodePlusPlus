@@ -75,7 +75,6 @@ generate_secrets() {
 
         NEO4J_PASSWORD=$(openssl rand -hex 24)
         REDIS_PASSWORD=$(openssl rand -hex 24)
-        LITELLM_MASTER_KEY="sk-litellm-$(openssl rand -hex 16)"
 
         cat > "$ENV_FILE" << EOF
 # Claude Code++ Environment - Auto-generated
@@ -84,7 +83,6 @@ NEO4J_URI=bolt://localhost:7687
 NEO4J_USER=neo4j
 REDIS_PASSWORD=$REDIS_PASSWORD
 REDIS_URL=redis://:$REDIS_PASSWORD@localhost:6379
-LITELLM_MASTER_KEY=$LITELLM_MASTER_KEY
 SQLITE_PATH=$INSTALL_DIR/memory/sqlite/memories.db
 OBSIDIAN_VAULT_PATH=$INSTALL_DIR/memory/vault
 EOF
@@ -95,7 +93,7 @@ EOF
     fi
 
     # Export for Docker and child processes
-    export NEO4J_PASSWORD REDIS_PASSWORD LITELLM_MASTER_KEY
+    export NEO4J_PASSWORD REDIS_PASSWORD
     export REDIS_URL SQLITE_PATH OBSIDIAN_VAULT_PATH
 }
 
@@ -314,7 +312,7 @@ start_docker_services() {
     cd "$DOCKER_DIR"
 
     # Pass environment variables to docker-compose
-    export NEO4J_PASSWORD REDIS_PASSWORD LITELLM_MASTER_KEY
+    export NEO4J_PASSWORD REDIS_PASSWORD
     export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
     export OPENAI_API_KEY="${OPENAI_API_KEY:-}"
 
@@ -334,7 +332,7 @@ start_docker_services() {
             docker-compose up -d redis neo4j 2>/dev/null || warn "Some services failed to start"
             ;;
         enterprise)
-            # All services including livegrep and LiteLLM
+            # All services including livegrep
             info "Starting all enterprise services..."
             docker-compose --profile livegrep --profile browser --profile local-llm up -d 2>/dev/null || \
                 docker-compose --profile livegrep up -d 2>/dev/null || \

@@ -156,45 +156,6 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # LiteLLM proxy for model routing and cost optimization
-  litellm:
-    image: ghcr.io/berriai/litellm:v1.41.24
-    container_name: claude-code-pp-litellm
-    ports:
-      - "127.0.0.1:4000:4000"
-    environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY required}
-      # Redis for caching (uses internal network)
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
-    volumes:
-      - ../config/litellm.yaml:/app/config.yaml:ro
-    command: --config /app/config.yaml --detailed_debug
-    depends_on:
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 128M
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "20m"
-        max-file: "3"
-
   # Browser automation (optional)
   playwright:
     image: mcr.microsoft.com/playwright:v1.45.0-focal
@@ -271,7 +232,7 @@ networks:
 
 # Usage:
 #
-# Start core services (Redis + Neo4j + LiteLLM):
+# Start core services (Redis + Neo4j):
 #   docker-compose up -d
 #
 # Start with code search (livegrep):

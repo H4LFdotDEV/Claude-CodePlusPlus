@@ -10,7 +10,7 @@ Claude Code++ adds enterprise-grade capabilities to Claude Code through MCP (Mod
 - **Search MCP** - Multi-layer search (SQLite FTS → livegrep → Graphiti)
 - **System Controller** - macOS Accessibility API integration
 - **Research Environment** - Voice conversations + webcam whiteboard capture
-- **Infrastructure** - Docker-based services for Redis, Neo4j, and model routing
+- **Infrastructure** - Docker-based services for Redis and Neo4j
 
 ## Architecture
 
@@ -35,10 +35,10 @@ Claude Code++ adds enterprise-grade capabilities to Claude Code through MCP (Mod
 │  └──────────┘  └───────────┘  └───────────┘  └───────────────────┘           │
 │                                                                              │
 │  INFRASTRUCTURE                                                              │
-│  ┌──────────┐  ┌───────────┐  ┌───────────┐  ┌───────────────────┐           │
-│  │  Redis   │  │  Neo4j    │  │  SQLite   │  │  LiteLLM Router   │           │
-│  │  Cache   │  │  Graph DB │  │  Metadata │  │  Model routing    │           │
-│  └──────────┘  └───────────┘  └───────────┘  └───────────────────┘           │
+│  ┌──────────┐  ┌───────────┐  ┌───────────┐                                  │
+│  │  Redis   │  │  Neo4j    │  │  SQLite   │                                  │
+│  │  Cache   │  │  Graph DB │  │  Metadata │                                  │
+│  └──────────┘  └───────────┘  └───────────┘                                  │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -209,8 +209,7 @@ docker-compose -f docker/docker-compose.yaml ps
 | Service | Port | Purpose |
 |---------|------|---------|
 | redis | 6379 | Hot memory cache |
-| neo4j | 7687 | Knowledge graph (Graphiti) |
-| litellm | 4000 | Model routing |
+| neo4j | 7474/7687 | Knowledge graph (Graphiti) |
 
 ## Research Environment
 
