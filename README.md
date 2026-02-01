@@ -21,10 +21,10 @@ Claude Code++ adds enterprise-grade capabilities to Claude Code through MCP (Mod
 │                                                                              │
 │  MEMORY SYSTEM (What Claude Knows)                                           │
 │  ┌──────────┐  ┌───────────┐  ┌───────────┐  ┌───────────────────┐           │
-│  │  Redis   │  │ Graphiti  │  │ livegrep  │  │  Obsidian Vault   │           │
+│  │  Redis   │  │ Graphiti  │  │  SQLite   │  │  Obsidian Vault   │           │
 │  │  (Hot)   │→ │  (Warm)   │→ │  (Cold)   │→ │  (Archive)        │           │
-│  │ Session  │  │ Knowledge │  │ All-time  │  │  Human-readable   │           │
-│  │ context  │  │ graph     │  │ artifacts │  │  export           │           │
+│  │ Session  │  │ Knowledge │  │ Full-text │  │  Human-readable   │           │
+│  │ context  │  │ graph     │  │ search    │  │  export           │           │
 │  └──────────┘  └───────────┘  └───────────┘  └───────────────────┘           │
 │                                                                              │
 │  SEARCH SYSTEM (How Claude Finds Things)                                     │
