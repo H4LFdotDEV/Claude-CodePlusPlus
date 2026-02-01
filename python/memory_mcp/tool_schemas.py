@@ -1,6 +1,9 @@
 # tool_schemas.py
 # MCP Tool Schema Definitions for Memory MCP Server
-# Centralized schema definitions for all 10 MCP tools
+# Centralized schema definitions for all 20 MCP tools
+# - 10 Core tools (memory CRUD, sessions, vault)
+# - 5 Research tools (voice/whiteboard sessions)
+# - 5 Tier-specific tools (knowledge graph, code search)
 
 from typing import List, Dict, Any
 
@@ -13,16 +16,32 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
         List of tool schema dictionaries containing name, description, and inputSchema
 
     The returned schemas define:
+
+    Core Tools (10):
     - memory_store: Store content in memory with type, tags, project
-    - memory_search: Search memory by text or semantic similarity
-    - memory_recall: Retrieve specific memory by ID
+    - memory_search: Multi-tier search by text or semantic similarity
+    - memory_recall: Retrieve specific memory by ID (tracks access for promotion)
     - memory_delete: Delete a memory by ID
     - memory_list: List recent memories with optional filters
     - session_save: Save current session state
     - session_restore: Restore a previous session
     - vault_write: Write note to Obsidian vault
     - vault_read: Read note from Obsidian vault
-    - memory_stats: Get memory system statistics
+    - memory_stats: Get memory system statistics with tier health
+
+    Research Tools (5):
+    - research_session_start: Start voice/whiteboard research session
+    - research_session_end: End session with summary and action items
+    - research_transcript_store: Store voice transcript segments
+    - research_capture_store: Store whiteboard/webcam captures
+    - research_search: Search across research data
+
+    Tier-Specific Tools (5):
+    - search_entities: Search Graphiti knowledge graph for entities
+    - search_facts: Search Graphiti for facts/relationships
+    - code_search: RE2 regex code search via livegrep
+    - search_function: Find function definitions
+    - search_class: Find class/struct definitions
     """
     return [
         {

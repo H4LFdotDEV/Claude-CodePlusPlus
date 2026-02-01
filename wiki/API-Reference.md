@@ -1,8 +1,18 @@
 # API Reference
 
-Complete MCP tool schemas for Claude Code++.
+Complete MCP tool schemas for Claude Code++ Memory MCP Server (20 tools).
 
-## Memory MCP Tools
+## Tool Categories
+
+| Category | Count | Description |
+|----------|-------|-------------|
+| Core | 10 | Memory CRUD, sessions, vault operations |
+| Research | 5 | Voice/whiteboard research sessions |
+| Tier-Specific | 5 | Knowledge graph and code search |
+
+---
+
+## Core Tools (10)
 
 ### memory_store
 
@@ -43,7 +53,7 @@ Store content in long-term memory.
 
 ### memory_search
 
-Search memory using text or semantic similarity.
+Multi-tier search using text or semantic similarity.
 
 ```json
 {
@@ -62,9 +72,59 @@ Search memory using text or semantic similarity.
     },
     "limit": {
       "type": "integer",
-      "description": "Maximum results",
+      "description": "Maximum results (max: 100)",
       "required": false,
       "default": 10
+    },
+    "filters": {
+      "type": "object",
+      "properties": {
+        "doc_type": {"type": "string"},
+        "project": {"type": "string"},
+        "tags": {"type": "array", "items": {"type": "string"}}
+      },
+      "required": false
+    }
+  }
+}
+```
+
+**Multi-tier behavior (when `type="hybrid"` or `type="semantic"`):**
+1. Hot tier (Redis) - Cached results
+2. Warm tier (Graphiti) - Entity matches
+3. Cold tier (SQLite) - Full-text search
+4. Cold tier (livegrep) - Code matches
+5. Results deduplicated and filtered
+
+### memory_recall
+
+Recall a specific memory by ID. **Tracks access for tier promotion** (5+ accesses triggers warm tier promotion).
+
+```json
+{
+  "name": "memory_recall",
+  "parameters": {
+    "id": {
+      "type": "string",
+      "description": "Document ID",
+      "required": true
+    }
+  }
+}
+```
+
+### memory_delete
+
+Delete a memory from all tiers.
+
+```json
+{
+  "name": "memory_delete",
+  "parameters": {
+    "id": {
+      "type": "string",
+      "description": "Document ID to delete",
+      "required": true
     }
   }
 }
@@ -72,7 +132,7 @@ Search memory using text or semantic similarity.
 
 ### memory_list
 
-List recent memories.
+List recent memories with optional filters.
 
 ```json
 {
@@ -90,42 +150,9 @@ List recent memories.
     },
     "limit": {
       "type": "integer",
+      "description": "Maximum results (max: 100)",
       "required": false,
       "default": 20
-    }
-  }
-}
-```
-
-### memory_recall
-
-Recall a specific memory by ID.
-
-```json
-{
-  "name": "memory_recall",
-  "parameters": {
-    "id": {
-      "type": "string",
-      "description": "Document ID",
-      "required": true
-    }
-  }
-}
-```
-
-### memory_delete
-
-Delete a memory.
-
-```json
-{
-  "name": "memory_delete",
-  "parameters": {
-    "id": {
-      "type": "string",
-      "description": "Document ID to delete",
-      "required": true
     }
   }
 }
@@ -226,7 +253,7 @@ Read a note from the vault.
 
 ### memory_stats
 
-Get memory system statistics.
+Get memory system statistics with tier health checks.
 
 ```json
 {
@@ -238,39 +265,212 @@ Get memory system statistics.
 **Returns:**
 ```json
 {
+  "sqlite_count": 1234,
+  "session_id": "current-session-id",
   "components": {
     "sqlite": true,
+    "vault": true,
     "redis": true,
-    "lancedb": true,
-    "graphiti": false,
-    "livegrep": false,
-    "vault": true
-  },
-  "counts": {
-    "total_documents": 1234,
-    "by_type": {
-      "code": 500,
-      "note": 400,
-      "conversation": 200,
-      "reference": 134
-    }
+    "embedder": true,
+    "tier_manager": true
   },
   "health": {
-    "status": "healthy",
-    "latency_ms": {
-      "sqlite": 5,
-      "redis": 1,
-      "lancedb": 8
+    "sqlite": {"status": "healthy", "latency_ms": 5},
+    "vault": {"status": "connected", "latency_ms": 15},
+    "redis": {"status": "healthy", "latency_ms": 1},
+    "embedder": {"status": "active"},
+    "tier_manager": {
+      "status": "healthy",
+      "latency_ms": 8,
+      "available_tiers": ["hot", "warm", "cold", "code_search"]
+    }
+  },
+  "tiers": {
+    "hot": {"available": true, "stats": {...}},
+    "warm": {"available": true, "stats": {...}},
+    "cold": {"available": true, "stats": {...}},
+    "code_search": {"available": true, "stats": {...}}
+  }
+}
+```
+
+---
+
+## Research Tools (5)
+
+### research_session_start
+
+Start a new research session for voice/whiteboard capture.
+
+```json
+{
+  "name": "research_session_start",
+  "parameters": {
+    "name": {
+      "type": "string",
+      "description": "Session name",
+      "required": true
+    },
+    "focus_area": {
+      "type": "string",
+      "description": "Research focus or topic",
+      "required": false
+    },
+    "participants": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "List of participant names",
+      "required": false
     }
   }
 }
 ```
 
-## Knowledge Graph Tools
+### research_session_end
+
+End a research session and generate summary.
+
+```json
+{
+  "name": "research_session_end",
+  "parameters": {
+    "session_id": {
+      "type": "string",
+      "description": "Session ID to end",
+      "required": true
+    },
+    "summary": {
+      "type": "string",
+      "description": "Session summary",
+      "required": false
+    },
+    "action_items": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "List of action items",
+      "required": false
+    },
+    "key_decisions": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Key decisions made",
+      "required": false
+    }
+  }
+}
+```
+
+### research_transcript_store
+
+Store a voice transcript segment.
+
+```json
+{
+  "name": "research_transcript_store",
+  "parameters": {
+    "text": {
+      "type": "string",
+      "description": "Transcript text",
+      "required": true
+    },
+    "speaker": {
+      "type": "string",
+      "description": "Speaker name",
+      "required": false,
+      "default": "user"
+    },
+    "session_id": {
+      "type": "string",
+      "description": "Associated research session",
+      "required": false
+    },
+    "timestamp": {
+      "type": "string",
+      "description": "ISO timestamp of the segment",
+      "required": false
+    }
+  }
+}
+```
+
+### research_capture_store
+
+Store a whiteboard or webcam capture.
+
+```json
+{
+  "name": "research_capture_store",
+  "parameters": {
+    "description": {
+      "type": "string",
+      "description": "Description of what was captured",
+      "required": true
+    },
+    "ocr_text": {
+      "type": "string",
+      "description": "Extracted text from the image",
+      "required": false
+    },
+    "image_path": {
+      "type": "string",
+      "description": "Path to the image file",
+      "required": false
+    },
+    "session_id": {
+      "type": "string",
+      "description": "Associated research session",
+      "required": false
+    },
+    "capture_type": {
+      "type": "string",
+      "enum": ["whiteboard", "webcam", "screenshot"],
+      "required": false,
+      "default": "whiteboard"
+    }
+  }
+}
+```
+
+### research_search
+
+Search across research data.
+
+```json
+{
+  "name": "research_search",
+  "parameters": {
+    "query": {
+      "type": "string",
+      "description": "Search query",
+      "required": true
+    },
+    "session_id": {
+      "type": "string",
+      "description": "Filter to specific session",
+      "required": false
+    },
+    "type": {
+      "type": "string",
+      "enum": ["transcript", "research_image", "research_session"],
+      "description": "Filter by content type",
+      "required": false
+    },
+    "limit": {
+      "type": "integer",
+      "required": false,
+      "default": 20
+    }
+  }
+}
+```
+
+---
+
+## Tier-Specific Tools (5)
 
 ### search_entities
 
-Search knowledge graph for entities.
+Search Graphiti knowledge graph for entities.
 
 ```json
 {
@@ -283,6 +483,7 @@ Search knowledge graph for entities.
     },
     "limit": {
       "type": "integer",
+      "description": "Maximum results (max: 100)",
       "required": false,
       "default": 10
     }
@@ -290,9 +491,24 @@ Search knowledge graph for entities.
 }
 ```
 
+**Returns:**
+```json
+{
+  "results": [
+    {
+      "id": "entity-uuid",
+      "name": "EntityName",
+      "summary": "Entity description",
+      "labels": ["Label1", "Label2"]
+    }
+  ],
+  "total": 1
+}
+```
+
 ### search_facts
 
-Search knowledge graph for facts/relationships.
+Search Graphiti knowledge graph for facts/relationships.
 
 ```json
 {
@@ -305,6 +521,7 @@ Search knowledge graph for facts/relationships.
     },
     "limit": {
       "type": "integer",
+      "description": "Maximum results (max: 100)",
       "required": false,
       "default": 10
     }
@@ -312,11 +529,26 @@ Search knowledge graph for facts/relationships.
 }
 ```
 
-## Code Search Tools
+**Returns:**
+```json
+{
+  "results": [
+    {
+      "id": "fact-uuid",
+      "source": "SourceEntity",
+      "target": "TargetEntity",
+      "fact": "The relationship between them",
+      "valid_at": "2024-01-15",
+      "invalid_at": null
+    }
+  ],
+  "total": 1
+}
+```
 
 ### code_search
 
-Search code across repositories using regex patterns.
+Search code across repositories using RE2 regex patterns via livegrep.
 
 ```json
 {
@@ -327,18 +559,19 @@ Search code across repositories using regex patterns.
       "description": "RE2 regex pattern",
       "required": true
     },
-    "repo_filter": {
-      "type": "string",
-      "description": "Filter by repository name",
-      "required": false
-    },
     "path_filter": {
       "type": "string",
-      "description": "Filter by file path (e.g., '*.py')",
+      "description": "Glob pattern to filter files (e.g., '*.py')",
       "required": false
     },
-    "max_matches": {
+    "repo_filter": {
+      "type": "string",
+      "description": "Repository name to search within",
+      "required": false
+    },
+    "limit": {
       "type": "integer",
+      "description": "Maximum results (max: 200)",
       "required": false,
       "default": 50
     }
@@ -346,84 +579,151 @@ Search code across repositories using regex patterns.
 }
 ```
 
+**Returns:**
+```json
+{
+  "results": [
+    {
+      "repo": "repository-name",
+      "path": "src/file.ts",
+      "line_number": 42,
+      "line_content": "matching line content"
+    }
+  ],
+  "total": 1,
+  "truncated": false,
+  "duration_ms": 15
+}
+```
+
 ### search_function
 
-Search for function/method definitions.
+Search for function/method definitions by name.
 
 ```json
 {
   "name": "search_function",
   "parameters": {
-    "function_name": {
+    "name": {
       "type": "string",
-      "description": "Name of function to find",
+      "description": "Function name to search for",
       "required": true
     },
     "language": {
       "type": "string",
-      "description": "Programming language",
+      "description": "Programming language (python, javascript, typescript, go, rust, java, c, cpp)",
       "required": false
     },
-    "max_matches": {
+    "limit": {
       "type": "integer",
+      "description": "Maximum results (max: 200)",
       "required": false,
-      "default": 20
+      "default": 50
     }
   }
 }
 ```
 
+**Language patterns used:**
+| Language | Pattern |
+|----------|---------|
+| python | `def name` or `async def name` |
+| javascript/typescript | `function name` or `const name =` |
+| go | `func name` or `func (receiver) name` |
+| rust | `fn name` or `pub fn name` |
+| java | `void name` or `public ... name` |
+| c/cpp | Return type followed by `name(` |
+
 ### search_class
 
-Search for class/struct/interface definitions.
+Search for class/struct/interface definitions by name.
 
 ```json
 {
   "name": "search_class",
   "parameters": {
-    "class_name": {
+    "name": {
       "type": "string",
-      "description": "Name of class to find",
+      "description": "Class/struct name to search for",
       "required": true
     },
     "language": {
       "type": "string",
-      "description": "Programming language",
+      "description": "Programming language (python, javascript, typescript, go, rust, java)",
       "required": false
     },
-    "max_matches": {
+    "limit": {
       "type": "integer",
+      "description": "Maximum results (max: 200)",
       "required": false,
-      "default": 20
+      "default": 50
     }
   }
 }
 ```
 
+**Language patterns used:**
+| Language | Pattern |
+|----------|---------|
+| python | `class name` |
+| javascript/typescript | `class name` or `interface name` |
+| go | `type name struct` |
+| rust | `struct name` or `impl name` |
+| java | `class name` or `interface name` |
+
+---
+
 ## Response Format
 
-All tools return JSON responses:
+All tools return JSON responses wrapped in MCP content format:
 
+**Success:**
 ```json
 {
-  "success": true,
-  "data": { ... },
-  "error": null
+  "content": [
+    {
+      "type": "text",
+      "text": "{...}"
+    }
+  ]
 }
 ```
 
-Error responses:
-
+**Error:**
 ```json
 {
-  "success": false,
-  "data": null,
-  "error": "Error message describing what went wrong"
+  "content": [
+    {
+      "type": "text",
+      "text": "Error message"
+    }
+  ],
+  "isError": true
 }
 ```
+
+## Validation
+
+Input validation is performed on all parameters:
+
+- **String fields**: Length limits enforced (typically 1-10000 chars for content)
+- **Limit fields**: Clamped to maximum values (100 for most, 200 for code search)
+- **Enum fields**: Invalid values rejected with clear error message
+- **Required fields**: Missing required fields return validation error
+
+## Timeouts
+
+Async operations use configurable timeouts:
+
+| Operation | Default Timeout |
+|-----------|-----------------|
+| General async | 30 seconds |
+| Graphiti search | 30 seconds |
+| Tier promotion | 60 seconds |
 
 ## Related Pages
 
 - [[Memory-MCP-Tools]] - Tool usage examples
 - [[Memory-MCP]] - Memory system overview
+- [[Memory-Tiers]] - Tier architecture
 - [[Configuration]] - Setup options

@@ -39,14 +39,16 @@ Claude: [searches memory, finds JWT decision from last week]
 ```
 
 ### Tiered Storage
-Optimized for different access patterns:
+Optimized for different access patterns with automatic promotion:
 
 | Tier | Storage | Speed | Use Case |
 |------|---------|-------|----------|
 | Hot | Redis | <1ms | Current session |
-| Warm | Graphiti/LanceDB | <50ms | Knowledge graph, semantic search |
+| Warm | Graphiti/Neo4j | <50ms | Knowledge graph, relationships |
 | Cold | SQLite/livegrep | <100ms | Full-text search, code search |
 | Archive | Obsidian Vault | <200ms | Human-readable documentation |
+
+**20 MCP Tools** available across core (10), research (5), and tier-specific (5) categories.
 
 ### Session Continuity
 Pick up exactly where you left off:

@@ -37,6 +37,7 @@ config/*.local.yaml
 # Keep plugin/subproject READMEs
 !plugins/**/README.md
 !python/README.md
+!python/memory_mcp/SYSTEM_PROMPT.md
 # Keep wiki documentation
 !wiki/*.md
 !CLAUDE.md

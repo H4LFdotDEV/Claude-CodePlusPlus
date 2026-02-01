@@ -48,20 +48,36 @@ Tiered memory system with automatic promotion/demotion:
 | Hot | Redis | <1ms | 1000 items | Active session cache |
 | Warm | Graphiti/Neo4j | <50ms | Relationship-based | Knowledge graph (entities, facts) |
 | Cold | SQLite | <50ms | Unlimited | Metadata, full-text search |
-| Cold | livegrep | <100ms | All repos | Cross-repository code search (optional, requires `--profile livegrep`) |
+| Cold | livegrep | <100ms | All repos | Cross-repository code search (optional) |
 | Archive | Obsidian | <200ms | Unlimited | Human-readable notes |
 
-**MCP Tools:**
+**MCP Tools (20 total):**
+
+*Core Tools (10):*
 - `memory_store` - Store content with type, tags, importance
-- `memory_search` - Semantic search across all tiers
-- `memory_recall` - Retrieve by ID or pattern
+- `memory_search` - Multi-tier search with automatic tier selection
+- `memory_recall` - Retrieve by ID (tracks access for promotion)
 - `memory_delete` - Remove memories
 - `memory_list` - List memories by type/tag
 - `session_save` - Persist current session
 - `session_restore` - Load previous session
 - `vault_write` - Write to Obsidian vault
 - `vault_read` - Read from Obsidian vault
-- `memory_stats` - Get memory statistics
+- `memory_stats` - Get memory statistics with tier health
+
+*Research Tools (5):*
+- `research_session_start` - Start voice/whiteboard research session
+- `research_session_end` - End session and generate summary
+- `research_transcript_store` - Store voice transcript segments
+- `research_capture_store` - Store whiteboard/webcam captures
+- `research_search` - Search across research data
+
+*Tier-Specific Tools (5):*
+- `search_entities` - Search Graphiti knowledge graph for entities
+- `search_facts` - Search Graphiti for facts/relationships
+- `code_search` - RE2 regex code search via livegrep
+- `search_function` - Find function definitions
+- `search_class` - Find class/struct definitions
 
 ### System Controller (Swift)
 
@@ -116,6 +132,35 @@ Room-scale research environment with voice conversations and webcam whiteboard c
 - Session context → Redis (hot tier)
 
 See [Research Environment Wiki](wiki/Research-Environment.md) for full documentation.
+
+### Tier Architecture
+
+The memory system uses automatic tier promotion based on access patterns:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Hot Tier (Redis)                          │
+│                     < 1ms access                             │
+│              Session cache, frequent items                   │
+├─────────────────────────────────────────────────────────────┤
+│                   Warm Tier (Graphiti)                       │
+│                    < 50ms access                             │
+│             Knowledge graph, entity relations                │
+├─────────────────────────────────────────────────────────────┤
+│                   Cold Tier                                  │
+│   ┌─────────────────────┬─────────────────────┐             │
+│   │  SQLite FTS         │   livegrep          │             │
+│   │   < 50ms access     │   < 100ms access    │             │
+│   │   Full-text, meta   │   Code search       │             │
+│   └─────────────────────┴─────────────────────┘             │
+├─────────────────────────────────────────────────────────────┤
+│                 Archive Tier (Vault)                         │
+│                    < 200ms access                            │
+│              Human-readable documentation                    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Automatic Promotion:** Documents accessed 5+ times are promoted to warm tier (Graphiti knowledge graph). Access tracking uses LRU eviction (max 10k entries) with Redis distributed tracking when available.
 
 ### LiteLLM Router
 
@@ -309,4 +354,13 @@ Useful for adopting specific personas (code reviewer, architect, debugger, etc.)
 
 - Behavioral guidelines: `python/memory_mcp/SYSTEM_PROMPT.md`
 - Tool schemas: `python/memory_mcp/tool_schemas.py`
-- Tool examples: `python/memory_mcp/tool_examples.py`
+- Handler implementations: `python/memory_mcp/handlers/`
+  - `memory.py` - Core CRUD operations
+  - `session.py` - Session save/restore
+  - `vault.py` - Obsidian vault operations
+  - `stats.py` - Health checks and statistics
+  - `research.py` - Voice/whiteboard research tools
+  - `tier.py` - Knowledge graph and code search tools
+- Tier management: `python/memory_mcp/tier_manager.py`
+- Async utilities: `python/memory_mcp/async_utils.py`
+- Access tracking: `python/memory_mcp/access_tracker.py`
