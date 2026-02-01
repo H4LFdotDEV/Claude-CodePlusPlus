@@ -15,7 +15,14 @@ __pycache__/
 *.pyc
 .venv/
 *.egg-info/
-python/=0.21
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+dist/
+build/
 
 # Docker
 docker/.env
@@ -34,6 +41,7 @@ config/*.local.yaml
 !SECURITY.md
 !CONTRIBUTING.md
 !CODE_OF_CONDUCT.md
+!.github/**/*.md
 # Keep plugin/subproject READMEs
 !plugins/**/README.md
 !python/README.md
@@ -55,5 +63,13 @@ Archive.zip
 .claude/skills/
 .claude/hooks.json
 
-# Reference repositories (not tracked)
-openclaw/
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Secrets
+.env
+.env.local
+.secrets.baseline
