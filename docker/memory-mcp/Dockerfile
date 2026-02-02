@@ -1,3 +1,5 @@
+# TODO: Pin to digest for supply chain security
+# To get digest: docker pull python:3.11-slim && docker inspect --format='{{index .RepoDigests 0}}' python:3.11-slim
 FROM python:3.11-slim
 
 LABEL org.opencontainers.image.title="Claude Code++ Memory MCP"
