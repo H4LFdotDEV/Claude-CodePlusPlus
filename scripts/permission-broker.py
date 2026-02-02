@@ -696,8 +696,11 @@ class PermissionBroker:
         if socket_path.exists():
             socket_path.unlink()
 
-        # Ensure parent directory exists
+        # Ensure parent directory exists with restrictive permissions
         socket_path.parent.mkdir(parents=True, exist_ok=True)
+        # Set parent directory permissions to 0o700 (user only) to prevent
+        # other users from creating files in the socket directory
+        os.chmod(socket_path.parent, 0o700)
 
         self.server = await asyncio.start_unix_server(
             self.handle_client,

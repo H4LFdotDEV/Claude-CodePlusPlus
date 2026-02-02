@@ -103,9 +103,41 @@ class LocalBackupStrategy(BackupStrategy):
         """Ensure backup directory exists."""
         Path(self.backup_path).mkdir(parents=True, exist_ok=True)
 
+    def _safe_join(self, base: str, *parts: str) -> str:
+        """
+        Safely join paths, preventing directory traversal.
+
+        Args:
+            base: Base directory that must contain the result
+            *parts: Path components to join
+
+        Returns:
+            Resolved absolute path within base
+
+        Raises:
+            ValueError: If path traversal is detected
+        """
+        # Validate inputs
+        for part in parts:
+            if not isinstance(part, str):
+                raise TypeError(f"Path component must be string, got {type(part).__name__}")
+            if '\x00' in part:
+                raise ValueError("Path contains null bytes (path injection detected)")
+
+        base_real = os.path.realpath(base)
+        result = os.path.realpath(os.path.join(base_real, *parts))
+
+        # Verify result is within base directory
+        if not (result == base_real or result.startswith(base_real + os.sep)):
+            raise ValueError(
+                f"Path traversal detected: {'/'.join(parts)} escapes base {base}"
+            )
+
+        return result
+
     def _get_backup_dir(self, backup_id: str) -> str:
         """Get directory for a specific backup."""
-        return os.path.join(self.backup_path, backup_id)
+        return self._safe_join(self.backup_path, backup_id)
 
     def backup(self, metadata: BackupMetadata) -> bool:
         """Execute local backup."""
@@ -120,7 +152,7 @@ class LocalBackupStrategy(BackupStrategy):
                     logger.warning(f"Source {component} not found: {source_path}")
                     continue
 
-                dest = os.path.join(backup_dir, component)
+                dest = self._safe_join(backup_dir, component)
                 if os.path.isfile(source_path):
                     shutil.copy2(source_path, dest)
                 else:
@@ -135,7 +167,7 @@ class LocalBackupStrategy(BackupStrategy):
 
             # Write manifest (before compression, so it's included in tar)
             metadata.status = "success"
-            manifest_path = os.path.join(backup_dir, "manifest.json")
+            manifest_path = self._safe_join(backup_dir, "manifest.json")
             with open(manifest_path, "w") as f:
                 f.write(metadata.to_json())
 
@@ -164,7 +196,7 @@ class LocalBackupStrategy(BackupStrategy):
             # For directories, hash all files
             for root, _, files in os.walk(path):
                 for file in sorted(files):
-                    file_path = os.path.join(root, file)
+                    file_path = self._safe_join(root, file)
                     with open(file_path, "rb") as f:
                         for chunk in iter(lambda: f.read(4096), b""):
                             hash_obj.update(chunk)
@@ -200,7 +232,7 @@ class LocalBackupStrategy(BackupStrategy):
         total = 0
         for dirpath, _, filenames in os.walk(path):
             for filename in filenames:
-                filepath = os.path.join(dirpath, filename)
+                filepath = self._safe_join(dirpath, filename)
                 total += os.path.getsize(filepath)
         return total
 
@@ -225,12 +257,16 @@ class LocalBackupStrategy(BackupStrategy):
         """Get all backups."""
         backups = []
         for item in os.listdir(self.backup_path):
-            item_path = os.path.join(self.backup_path, item)
+            try:
+                item_path = self._safe_join(self.backup_path, item)
+            except ValueError as e:
+                logger.warning(f"Skipping suspicious backup entry {item}: {e}")
+                continue
 
             # Handle both uncompressed directories and tar files
             manifest_path = None
             if os.path.isdir(item_path):
-                manifest_path = os.path.join(item_path, "manifest.json")
+                manifest_path = self._safe_join(item_path, "manifest.json")
             elif item.endswith(".tar.gz"):
                 # Extract manifest from tar
                 try:
@@ -277,7 +313,7 @@ class LocalBackupStrategy(BackupStrategy):
                 return False
 
             # Read manifest
-            manifest_path = os.path.join(backup_dir, "manifest.json")
+            manifest_path = self._safe_join(backup_dir, "manifest.json")
             if not os.path.exists(manifest_path):
                 logger.error(f"Manifest not found in backup")
                 return False
@@ -288,7 +324,7 @@ class LocalBackupStrategy(BackupStrategy):
             # Restore files
             for component, source_path in metadata.source_paths.items():
                 source_path = os.path.expanduser(source_path)
-                backup_component_path = os.path.join(backup_dir, component)
+                backup_component_path = self._safe_join(backup_dir, component)
 
                 if not os.path.exists(backup_component_path):
                     logger.warning(f"Component not in backup: {component}")
@@ -360,7 +396,7 @@ class LocalBackupStrategy(BackupStrategy):
                 return False
 
             # Read manifest and verify hashes
-            manifest_path = os.path.join(backup_dir, "manifest.json")
+            manifest_path = self._safe_join(backup_dir, "manifest.json")
             if not os.path.exists(manifest_path):
                 logger.error(f"Manifest not found")
                 return False
@@ -370,7 +406,7 @@ class LocalBackupStrategy(BackupStrategy):
 
             # Verify file hashes
             for component, stored_hash in metadata.file_hashes.items():
-                component_path = os.path.join(backup_dir, component)
+                component_path = self._safe_join(backup_dir, component)
 
                 if not os.path.exists(component_path):
                     logger.error(f"Component missing: {component}")

@@ -23,41 +23,46 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 
+# Pin dependencies using compatible release (~=) to allow patch updates only
+# This prevents auto-upgrade to potentially vulnerable major/minor versions
+# Run `pip-audit` in CI to detect known vulnerabilities
+# See: https://peps.python.org/pep-0440/#compatible-release
 dependencies = [
-    "pyyaml>=6.0",
-    "pydantic>=2.0",
-    "mcp>=1.0.0",
+    "pyyaml~=6.0",
+    "pydantic~=2.10",
+    "mcp~=1.0.0",
 ]
 
 [project.optional-dependencies]
 # Hot tier - Redis caching
-redis = ["redis>=4.0"]
+redis = ["redis~=5.2"]
 
 # Warm tier - Graphiti knowledge graph (requires Neo4j)
 graphiti = [
-    "graphiti-core>=0.5",
-    "neo4j>=5.0",
+    "graphiti-core~=0.5",
+    "neo4j~=5.27",
 ]
 
 # Embeddings for semantic search
-embeddings = ["httpx>=0.24"]
+embeddings = ["httpx~=0.28"]
 
 # All optional dependencies for full installation
 all = [
-    "redis>=4.0",
-    "graphiti-core>=0.5",
-    "neo4j>=5.0",
-    "httpx>=0.24",
+    "redis~=5.2",
+    "graphiti-core~=0.5",
+    "neo4j~=5.27",
+    "httpx~=0.28",
 ]
 
 # Development dependencies
 dev = [
-    "pytest>=7.0",
-    "pytest-asyncio>=0.21",
-    "pytest-cov>=4.0",
-    "black>=23.0",
-    "ruff>=0.1",
-    "mypy>=1.0",
+    "pytest~=8.3",
+    "pytest-asyncio~=0.24",
+    "pytest-cov~=6.0",
+    "black~=24.10",
+    "ruff~=0.8",
+    "mypy~=1.13",
+    "pip-audit~=2.7",  # Security vulnerability scanning
 ]
 
 [project.scripts]

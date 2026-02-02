@@ -207,21 +207,32 @@ class VaultManager:
                 candidate_normalized == vault_normalized or
                 candidate_normalized.startswith(vault_with_sep)
             ):
-                raise ValueError(
-                    f"Path traversal detected: attempted to escape vault\n"
-                    f"  Requested: {relative_path}\n"
-                    f"  Resolved to: {candidate_real}\n"
-                    f"  Vault root: {vault_real}"
+                # Log detailed info internally for debugging
+                logger.warning(
+                    "Path traversal detected",
+                    extra={
+                        "requested_path": relative_path,
+                        "resolved_path": candidate_real,
+                        "vault_root": vault_real,
+                    }
                 )
+                # Return generic message to caller (don't expose internal paths)
+                raise ValueError("Path traversal detected: path escapes vault boundary")
 
             # Additional check: ensure realpath didn't return something outside vault
             # This catches symlink-to-symlink chains and other edge cases
             if not os.path.commonpath([candidate_real, vault_real]) == vault_real:
-                raise ValueError(
-                    f"Path escape via symlink detected: {relative_path}\n"
-                    f"  Resolved to: {candidate_real}\n"
-                    f"  Vault root: {vault_real}"
+                # Log detailed info internally for debugging
+                logger.warning(
+                    "Path escape via symlink detected",
+                    extra={
+                        "requested_path": relative_path,
+                        "resolved_path": candidate_real,
+                        "vault_root": vault_real,
+                    }
                 )
+                # Return generic message to caller (don't expose internal paths)
+                raise ValueError("Path traversal detected: symlink escapes vault boundary")
 
             return candidate_real
 

@@ -56,29 +56,34 @@ class EpisodeResult:
 class GraphitiManager:
     """
     Knowledge graph manager using Graphiti/Neo4j.
-    
+
     Graphiti provides:
     - Automatic entity extraction from text
     - Relationship discovery between entities
     - Temporal awareness (when facts were true)
     - Hybrid search (semantic + keyword + graph traversal)
-    
+
     Usage:
         manager = GraphitiManager()
         await manager.initialize()
-        
+
         # Add content (extracts entities/relationships automatically)
         result = await manager.add_memory(
             content="Claude is an AI assistant created by Anthropic.",
             source="documentation",
             doc_type="note"
         )
-        
+
         # Search for entities
         entities = await manager.search_entities("Claude")
-        
+
         # Search for facts/relationships
         facts = await manager.search_facts("AI assistant")
+
+    Security:
+        Credentials are accessed via properties that read from environment
+        on each access, rather than stored as instance attributes. This
+        prevents credential exposure via object inspection.
     """
 
     def __init__(
@@ -90,24 +95,71 @@ class GraphitiManager:
     ):
         """
         Initialize Graphiti manager.
-        
+
         Args:
             uri: Neo4j Bolt URI (default: bolt://localhost:7687)
             user: Neo4j username (default: neo4j)
             password: Neo4j password (from NEO4J_PASSWORD env var)
             openai_api_key: OpenAI API key for entity extraction (from OPENAI_API_KEY env var)
+
+        Note:
+            Password and API key overrides are stored in environment variables
+            prefixed with _GRAPHITI_OVERRIDE_ for testing purposes, not as
+            instance attributes.
         """
-        self.uri = uri or os.environ.get("NEO4J_URI", "bolt://localhost:7687")
-        self.user = user or os.environ.get("NEO4J_USER", "neo4j")
-        self.password = password or os.environ.get("NEO4J_PASSWORD")
-        self.openai_api_key = openai_api_key or os.environ.get("OPENAI_API_KEY")
-        
+        # Non-sensitive config can be stored as attributes
+        self._uri_override = uri
+        self._user_override = user
+
+        # Sensitive credentials: store overrides in environment, not instance
+        # This allows testing while preventing credential exposure via inspection
+        if password is not None:
+            os.environ["_GRAPHITI_OVERRIDE_PASSWORD"] = password
+        if openai_api_key is not None:
+            os.environ["_GRAPHITI_OVERRIDE_OPENAI_KEY"] = openai_api_key
+
         self._graphiti: Optional["Graphiti"] = None
         self._initialized = False
         self._init_lock: Optional[asyncio.Lock] = None  # Lazily initialized
 
         if not GRAPHITI_AVAILABLE:
             logger.warning("Graphiti not available - knowledge graph features disabled")
+
+    @property
+    def uri(self) -> str:
+        """Neo4j Bolt URI."""
+        return self._uri_override or os.environ.get("NEO4J_URI", "bolt://localhost:7687")
+
+    @property
+    def user(self) -> str:
+        """Neo4j username."""
+        return self._user_override or os.environ.get("NEO4J_USER", "neo4j")
+
+    @property
+    def _password(self) -> Optional[str]:
+        """
+        Neo4j password - read from environment on each access.
+
+        Security: Not stored as instance attribute to prevent exposure
+        via object inspection.
+        """
+        return (
+            os.environ.get("_GRAPHITI_OVERRIDE_PASSWORD") or
+            os.environ.get("NEO4J_PASSWORD")
+        )
+
+    @property
+    def _openai_api_key(self) -> Optional[str]:
+        """
+        OpenAI API key - read from environment on each access.
+
+        Security: Not stored as instance attribute to prevent exposure
+        via object inspection.
+        """
+        return (
+            os.environ.get("_GRAPHITI_OVERRIDE_OPENAI_KEY") or
+            os.environ.get("OPENAI_API_KEY")
+        )
 
     def _get_init_lock(self) -> asyncio.Lock:
         """
@@ -139,7 +191,7 @@ class GraphitiManager:
             logger.warning("Cannot initialize: graphiti-core not installed")
             return False
 
-        if not self.password:
+        if not self._password:
             logger.warning("Cannot initialize: NEO4J_PASSWORD not set")
             return False
 
@@ -154,7 +206,7 @@ class GraphitiManager:
                 self._graphiti = Graphiti(
                     uri=self.uri,
                     user=self.user,
-                    password=self.password
+                    password=self._password
                 )
 
                 # Build indices and constraints

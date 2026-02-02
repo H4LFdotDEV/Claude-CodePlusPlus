@@ -1,13 +1,23 @@
 # Memory MCP Server - Claude Code++
+# Pinned dependencies for reproducible installs
+#
+# SECURITY: Run `pip-audit -r requirements.txt` to check for vulnerabilities
+# UPDATE: Use `pip-compile pyproject.toml` to regenerate with latest compatible versions
+#
+# Generated from pyproject.toml - do not edit directly
+
 # Core dependencies
-pyyaml>=6.0
+pyyaml~=6.0
+pydantic~=2.10
+mcp~=1.0.0
 
 # Hot cache layer (optional but recommended)
-redis>=4.0
+redis~=5.2
 
 # Embedding providers (optional - needed for semantic search)
-httpx>=0.24
+httpx~=0.28
 
 # Development
-pytest>=7.0
-pytest-asyncio>=0.21
+pytest~=8.3
+pytest-asyncio~=0.24
+pip-audit~=2.7

@@ -7,6 +7,7 @@
 services:
   # Knowledge graph for memory (warm layer) - Graphiti/Neo4j
   neo4j:
+    # TODO: Pin to digest for supply chain security
     image: neo4j:5.26-community
     container_name: claude-code-pp-neo4j
     ports:
@@ -18,10 +19,9 @@ services:
     environment:
       # Auth format: username/password
       - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD:?NEO4J_PASSWORD required}
-      # APOC plugin for advanced procedures
+      # APOC plugin for advanced procedures (restricted to required procedures only)
       - NEO4J_PLUGINS=["apoc"]
-      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
-      - NEO4J_dbms_security_procedures_allowlist=apoc.*
+      - NEO4J_dbms_security_procedures_allowlist=apoc.text.*,apoc.coll.*,apoc.meta.*
       # Memory configuration
       - NEO4J_server_memory_heap_initial__size=512m
       - NEO4J_server_memory_heap_max__size=1G
@@ -52,7 +52,8 @@ services:
 
   # Code search engine (cold layer) - livegrep backend
   livegrep-backend:
-    image: ghcr.io/livegrep/livegrep:latest
+    # TODO: Pin to digest for supply chain security
+    image: ghcr.io/livegrep/livegrep:v2.0.0
     container_name: claude-code-pp-livegrep-backend
     command: codesearch -load_index /data/index.idx -grpc 0.0.0.0:9999
     ports:
@@ -85,7 +86,8 @@ services:
 
   # Code search frontend (cold layer) - livegrep web
   livegrep-frontend:
-    image: ghcr.io/livegrep/livegrep:latest
+    # TODO: Pin to digest for supply chain security
+    image: ghcr.io/livegrep/livegrep:v2.0.0
     container_name: claude-code-pp-livegrep-frontend
     command: livegrep -listen 0.0.0.0:8910 -backends livegrep-backend:9999
     ports:
@@ -117,6 +119,7 @@ services:
 
   # Vector store for memory (warm layer) - Legacy, use neo4j instead
   chromadb:
+    # TODO: Pin to digest for supply chain security
     image: chromadb/chroma:0.4.22
     container_name: claude-code-pp-chroma
     ports:
@@ -139,6 +142,7 @@ services:
 
   # Fast cache and session memory (hot layer)
   redis:
+    # TODO: Pin to digest for supply chain security
     image: redis:7.2-alpine
     container_name: claude-code-pp-redis
     ports:
@@ -168,6 +172,7 @@ services:
 
   # Browser automation (optional)
   playwright:
+    # TODO: Pin to digest for supply chain security
     image: mcr.microsoft.com/playwright:v1.45.0-focal
     container_name: claude-code-pp-playwright
     ports:
@@ -181,6 +186,7 @@ services:
 
   # Local LLM server via Ollama (optional)
   ollama:
+    # TODO: Pin to digest for supply chain security
     image: ollama/ollama:0.1.33
     container_name: claude-code-pp-ollama
     ports:
@@ -217,6 +223,7 @@ services:
 
   # CI/CD simulation with Act (optional)
   act:
+    # TODO: Pin to digest for supply chain security
     image: ghcr.io/nektos/act:v0.2.62
     container_name: claude-code-pp-act
     volumes:
