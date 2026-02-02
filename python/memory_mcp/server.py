@@ -22,6 +22,7 @@ from .handlers import MemoryHandler, SessionHandler, VaultHandler, StatsHandler,
 from .graphiti_manager import GraphitiManager, GRAPHITI_AVAILABLE
 from .livegrep_client import LivegrepClient, HTTPX_AVAILABLE
 from .tier_manager import TierManager
+from .rate_limiter import RateLimiter
 
 # Configure logging
 LOG_LEVEL = os.environ.get("MEMORY_MCP_LOG_LEVEL", "INFO").upper()
@@ -72,6 +73,13 @@ class MemoryMCPServer:
         # MCP state
         self._request_id = 0
         self._session_id = str(uuid.uuid4())
+
+        # Rate limiting
+        self._rate_limiter = RateLimiter()
+        logger.info(
+            f"Rate limiter initialized: {self._rate_limiter.max_requests} requests/"
+            f"{self._rate_limiter.window_seconds}s"
+        )
 
         # Initialize handlers with shared dependencies
         self._init_handlers()
@@ -145,6 +153,7 @@ class MemoryMCPServer:
             "redis": self.redis,
             "embedder": self.embedder,
             "tier_manager": self.tier_manager,
+            "rate_limiter": self._rate_limiter,
             "session_id": self._session_id
         }
 
@@ -354,6 +363,23 @@ class MemoryMCPServer:
         method = request.get("method", "")
         params = request.get("params", {})
         request_id = request.get("id", 0)
+
+        # Apply rate limiting (use session_id as client identifier)
+        # Skip rate limiting for initialize to allow connection setup
+        if method != "initialize":
+            rate_result = self._rate_limiter.check(self._session_id)
+            if not rate_result.allowed:
+                logger.warning(
+                    f"Rate limit exceeded for session {self._session_id}: "
+                    f"{rate_result.current_count}/{rate_result.limit} requests"
+                )
+                return self._create_error(
+                    -32000,
+                    f"Rate limit exceeded: {rate_result.current_count}/{rate_result.limit} "
+                    f"requests in {rate_result.window_seconds}s. "
+                    f"Retry after {rate_result.retry_after:.1f}s",
+                    request_id
+                )
 
         if method == "initialize":
             return self._create_response(self.handle_initialize(params), request_id)

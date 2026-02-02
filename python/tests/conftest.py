@@ -71,6 +71,8 @@ def test_config(temp_dir):
         ),
         livegrep=LivegrepConfig(
             endpoint="http://localhost:8910",
+            index_path=os.path.join(temp_dir, "livegrep", "index.idx"),
+            repos_path=os.path.join(temp_dir, "livegrep", "repos"),
             enabled=False,  # Disabled for tests unless livegrep is available
         ),
         base_path=temp_dir,

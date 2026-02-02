@@ -37,8 +37,9 @@ class ProactiveHandler(BaseHandler):
         embedder: Optional["FallbackEmbeddingProvider"] = None,
         tier_manager: Optional["TierManager"] = None,
         session_id: str = "",
+        **kwargs,  # Accept additional kwargs (e.g., rate_limiter)
     ):
-        super().__init__(sqlite, vault, redis, embedder, tier_manager, session_id)
+        super().__init__(sqlite, vault, redis, embedder, tier_manager, session_id=session_id, **kwargs)
         self._extractor: Optional[InsightExtractor] = None
         self._enabled = True
         self._config = {

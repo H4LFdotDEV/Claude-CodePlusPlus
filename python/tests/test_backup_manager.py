@@ -647,6 +647,69 @@ class TestCloudBackupStrategy:
         assert result is False
 
 
+class TestSafeJoinSecurity:
+    """Tests for path traversal prevention in _safe_join."""
+
+    def test_safe_join_normal_path(self, local_backup_strategy):
+        """Test safe_join works with normal paths."""
+        result = local_backup_strategy._safe_join(
+            local_backup_strategy.backup_path, "backup-001"
+        )
+        assert result.endswith("backup-001")
+        assert local_backup_strategy.backup_path in result
+
+    def test_safe_join_blocks_traversal(self, local_backup_strategy):
+        """Test safe_join blocks directory traversal attempts."""
+        with pytest.raises(ValueError, match="Path traversal detected"):
+            local_backup_strategy._safe_join(
+                local_backup_strategy.backup_path, "..", "etc", "passwd"
+            )
+
+    def test_safe_join_blocks_absolute_path_in_parts(self, local_backup_strategy):
+        """Test safe_join blocks absolute paths embedded in parts."""
+        with pytest.raises(ValueError, match="Path traversal detected"):
+            local_backup_strategy._safe_join(
+                local_backup_strategy.backup_path, "/etc/passwd"
+            )
+
+    def test_safe_join_blocks_null_byte_injection(self, local_backup_strategy):
+        """Test safe_join blocks null byte injection attacks."""
+        with pytest.raises(ValueError, match="null bytes"):
+            local_backup_strategy._safe_join(
+                local_backup_strategy.backup_path, "backup\x00.txt"
+            )
+
+    def test_safe_join_blocks_complex_traversal(self, local_backup_strategy):
+        """Test safe_join blocks complex traversal patterns."""
+        with pytest.raises(ValueError, match="Path traversal detected"):
+            local_backup_strategy._safe_join(
+                local_backup_strategy.backup_path,
+                "backup",
+                "..",
+                "..",
+                "..",
+                "etc",
+                "passwd"
+            )
+
+    def test_safe_join_validates_type(self, local_backup_strategy):
+        """Test safe_join validates input types."""
+        with pytest.raises(TypeError, match="must be string"):
+            local_backup_strategy._safe_join(
+                local_backup_strategy.backup_path, 123
+            )
+
+    def test_safe_join_nested_path_ok(self, local_backup_strategy):
+        """Test safe_join allows nested paths within base."""
+        result = local_backup_strategy._safe_join(
+            local_backup_strategy.backup_path,
+            "backup-001",
+            "manifest.json"
+        )
+        assert result.endswith("manifest.json")
+        assert "backup-001" in result
+
+
 class TestBackupEdgeCases:
     """Tests for edge cases and error scenarios."""
 

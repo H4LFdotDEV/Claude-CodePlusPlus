@@ -57,12 +57,17 @@ class TestGraphitiManagerInitialization:
 
         assert manager.uri == "bolt://custom-host:7688"
         assert manager.user == "custom_user"
-        assert manager.password == "custom_pass"
-        assert manager.openai_api_key == "sk-test-key"
+        # Credentials are now accessed via private properties for security
+        assert manager._password == "custom_pass"
+        assert manager._openai_api_key == "sk-test-key"
 
     def test_init_from_environment(self, monkeypatch):
         """Test initialization reads from environment variables."""
         from memory_mcp.graphiti_manager import GraphitiManager
+
+        # Clear any override env vars first
+        monkeypatch.delenv("_GRAPHITI_OVERRIDE_PASSWORD", raising=False)
+        monkeypatch.delenv("_GRAPHITI_OVERRIDE_OPENAI_KEY", raising=False)
 
         monkeypatch.setenv("NEO4J_URI", "bolt://env-host:7689")
         monkeypatch.setenv("NEO4J_USER", "env_user")
@@ -73,8 +78,9 @@ class TestGraphitiManagerInitialization:
 
         assert manager.uri == "bolt://env-host:7689"
         assert manager.user == "env_user"
-        assert manager.password == "env_pass"
-        assert manager.openai_api_key == "sk-env-key"
+        # Credentials are now accessed via private properties for security
+        assert manager._password == "env_pass"
+        assert manager._openai_api_key == "sk-env-key"
 
 
 class TestGraphitiManagerDataClasses:

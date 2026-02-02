@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from ..redis_client import RedisClient
     from ..embedding_provider import FallbackEmbeddingProvider
     from ..tier_manager import TierManager
+    from ..rate_limiter import RateLimiter
 
 logger = logging.getLogger("memory_mcp")
 
@@ -24,6 +25,7 @@ class BaseHandler:
     - redis: Hot tier cache (optional)
     - embedder: Embedding provider (optional)
     - tier_manager: Multi-tier orchestrator (optional)
+    - rate_limiter: Request rate limiter (optional)
     - session_id: Current session identifier
     """
 
@@ -34,6 +36,7 @@ class BaseHandler:
         redis: Optional["RedisClient"] = None,
         embedder: Optional["FallbackEmbeddingProvider"] = None,
         tier_manager: Optional["TierManager"] = None,
+        rate_limiter: Optional["RateLimiter"] = None,
         session_id: str = ""
     ):
         self.sqlite = sqlite
@@ -41,6 +44,7 @@ class BaseHandler:
         self.redis = redis
         self.embedder = embedder
         self.tier_manager = tier_manager
+        self.rate_limiter = rate_limiter
         self._session_id = session_id
 
     @property

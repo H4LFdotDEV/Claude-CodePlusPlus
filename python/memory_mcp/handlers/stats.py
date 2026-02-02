@@ -58,6 +58,9 @@ class StatsHandler(BaseHandler):
         # Tier system stats
         stats = self._check_tier_health(stats)
 
+        # Rate limiter stats
+        stats = self._check_rate_limiter(stats)
+
         logger.debug(f"Stats gathered: {stats['sqlite_count']} documents in SQLite")
         return stats
 
@@ -228,5 +231,46 @@ class StatsHandler(BaseHandler):
                 "health": {
                     **stats["health"],
                     "tier_manager": {"status": "error", "error": str(e)}
+                }
+            }
+
+    def _check_rate_limiter(self, stats: Dict[str, Any]) -> Dict[str, Any]:
+        """Check rate limiter status and gather stats."""
+        if not self.rate_limiter:
+            return {
+                **stats,
+                "health": {
+                    **stats["health"],
+                    "rate_limiter": {"status": "not_configured"}
+                }
+            }
+
+        try:
+            rate_stats = self.rate_limiter.stats()
+            client_status = self.rate_limiter.get_client_status(self._session_id)
+
+            return {
+                **stats,
+                "rate_limiter": {
+                    **rate_stats,
+                    "current_session": {
+                        "session_id": self._session_id,
+                        "requests_in_window": client_status.current_count,
+                        "limit": client_status.limit,
+                        "allowed": client_status.allowed
+                    }
+                },
+                "health": {
+                    **stats["health"],
+                    "rate_limiter": {"status": "active"}
+                }
+            }
+        except Exception as e:
+            logger.warning(f"Failed to get rate limiter stats: {e}")
+            return {
+                **stats,
+                "health": {
+                    **stats["health"],
+                    "rate_limiter": {"status": "error", "error": str(e)}
                 }
             }
