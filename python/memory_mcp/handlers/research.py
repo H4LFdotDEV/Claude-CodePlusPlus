@@ -1,6 +1,12 @@
 # handlers/research.py
 # Research session handler for voice transcripts and whiteboard captures
 # Jeremiah Kroesche | Halfservers LLC
+#
+# Updated: Feb 2026 - Integrated with TierManager for:
+#   - Parallel tier search
+#   - Access tracking for cold→warm promotion
+#   - Background entity extraction to knowledge graph
+#   - Session-level rate limiting
 
 import json
 import logging
@@ -10,6 +16,7 @@ from typing import Any, Dict, List, Optional
 
 from .base import BaseHandler
 from ..validation import validate_string, validate_list, validate_limit, validate_content
+from ..async_utils import run_async
 
 logger = logging.getLogger("memory_mcp")
 
@@ -21,12 +28,21 @@ class ResearchHandler(BaseHandler):
     - Starting/ending research sessions
     - Storing voice transcripts with speaker attribution
     - Storing whiteboard/webcam captures with descriptions
-    - Searching across research data
+    - Searching across research data (with parallel tier search)
+
+    Architecture Integration:
+    - Uses TierManager for parallel search across all tiers
+    - Tracks access for automatic cold→warm promotion
+    - Rate-limited per operation type
+    - Optionally embeds content for semantic search
     """
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._active_sessions: Dict[str, Dict[str, Any]] = {}
+
+        # Background promotion worker is started lazily by TierManager
+        # when first document is queued for promotion
 
     def session_start(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Start a new research session.
@@ -262,6 +278,18 @@ class ResearchHandler(BaseHandler):
         Returns:
             Dict with transcript_id and storage confirmation
         """
+        # Rate limit check
+        if self.rate_limiter:
+            result = self.rate_limiter.check(self._session_id)
+            if not result.allowed:
+                return {
+                    "content": [{"type": "text", "text": json.dumps({
+                        "error": "Rate limit exceeded for transcript storage",
+                        "retry_after_seconds": result.retry_after
+                    })}],
+                    "isError": True
+                }
+
         # Use validate_content to enforce size limits (1MB max)
         text = validate_content(arguments.get("text"), "text")
         speaker = arguments.get("speaker", "user")
@@ -269,12 +297,13 @@ class ResearchHandler(BaseHandler):
         timestamp = arguments.get("timestamp", datetime.now(timezone.utc).isoformat())
 
         transcript_id = str(uuid.uuid4())
+        content = f"[{speaker}]: {text}"
 
         # Store in SQLite
         from ..sqlite_index import MemoryDocument
         doc = MemoryDocument(
             id=transcript_id,
-            content=f"[{speaker}]: {text}",
+            content=content,
             doc_type="transcript",
             source=f"voice:{session_id or 'standalone'}:{timestamp}",
             tags=["transcript", "voice", f"speaker-{speaker.lower().replace(' ', '-')}"],
@@ -286,6 +315,14 @@ class ResearchHandler(BaseHandler):
             }
         )
         self.sqlite.upsert(doc)
+
+        # Track access for potential promotion to warm tier (knowledge graph)
+        # Transcripts with substantial content are good candidates for entity extraction
+        if self.tier_manager and len(text) > 100:
+            self.tier_manager.record_access(transcript_id, len(content))
+            # Queue longer transcripts for background entity extraction
+            if len(text) > 500:
+                self.tier_manager.queue_promotion(transcript_id)
 
         # Add to active session if exists
         if session_id and session_id in self._active_sessions:
@@ -316,7 +353,8 @@ class ResearchHandler(BaseHandler):
                 "speaker": speaker,
                 "session_id": session_id,
                 "word_count": len(text.split()),
-                "stored": True
+                "stored": True,
+                "queued_for_promotion": self.tier_manager is not None and len(text) > 500
             }, indent=2)}]
         }
 
@@ -334,6 +372,18 @@ class ResearchHandler(BaseHandler):
         Returns:
             Dict with capture_id and storage confirmation
         """
+        # Rate limit check
+        if self.rate_limiter:
+            result = self.rate_limiter.check(self._session_id)
+            if not result.allowed:
+                return {
+                    "content": [{"type": "text", "text": json.dumps({
+                        "error": "Rate limit exceeded for capture storage",
+                        "retry_after_seconds": result.retry_after
+                    })}],
+                    "isError": True
+                }
+
         # Use validate_content to enforce size limits (1MB max for description and OCR text)
         description = validate_content(arguments.get("description"), "description")
         ocr_text = arguments.get("ocr_text", "")
@@ -371,6 +421,16 @@ class ResearchHandler(BaseHandler):
             }
         )
         self.sqlite.upsert(doc)
+
+        # Track access for potential promotion to warm tier
+        # Captures with OCR text are valuable for entity extraction
+        queued_for_promotion = False
+        if self.tier_manager:
+            self.tier_manager.record_access(capture_id, len(content))
+            # Queue captures with substantial OCR text for entity extraction
+            if ocr_text and len(ocr_text) > 200:
+                self.tier_manager.queue_promotion(capture_id)
+                queued_for_promotion = True
 
         # Add to active session if exists
         if session_id and session_id in self._active_sessions:
@@ -414,12 +474,18 @@ class ResearchHandler(BaseHandler):
                 "session_id": session_id,
                 "has_ocr": bool(ocr_text),
                 "vault_path": vault_path,
-                "stored": True
+                "stored": True,
+                "queued_for_promotion": queued_for_promotion
             }, indent=2)}]
         }
 
     def search(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Search across research data.
+        """Search across research data using parallel tier search.
+
+        Uses TierManager to search across all memory tiers concurrently:
+        - Hot tier (Redis): Recent session cache
+        - Cold tier (SQLite): Full-text search
+        - Warm tier (Graphiti): Knowledge graph entities (if promoted)
 
         Args:
             arguments:
@@ -431,37 +497,109 @@ class ResearchHandler(BaseHandler):
         Returns:
             Dict with matching research items
         """
+        # Rate limit check
+        if self.rate_limiter:
+            result = self.rate_limiter.check(self._session_id)
+            if not result.allowed:
+                return {
+                    "content": [{"type": "text", "text": json.dumps({
+                        "error": "Rate limit exceeded for research search",
+                        "retry_after_seconds": result.retry_after
+                    })}],
+                    "isError": True
+                }
+
         query = validate_string(arguments.get("query"), "query", min_len=1)
         session_id = arguments.get("session_id")
         doc_type = arguments.get("type")
         limit = validate_limit(arguments.get("limit"), default=20)
 
-        # Search SQLite
-        results = self.sqlite.search_fulltext(query, limit=limit * 2)  # Over-fetch for filtering
+        # Research-specific types for filtering
+        research_types = ("transcript", "research_image", "research_session")
 
-        # Filter results
+        # Use parallel tier search if TierManager available
+        search_method = "parallel_tier"
+        if self.tier_manager:
+            try:
+                # Run parallel search across all tiers
+                raw_results = run_async(
+                    self.tier_manager.search_all_tiers_parallel(
+                        query,
+                        limit=limit * 2,  # Over-fetch for filtering
+                        tiers=["hot", "cold", "warm"]  # All tiers
+                    )
+                )
+            except Exception as e:
+                logger.warning(f"Parallel tier search failed, falling back to SQLite: {e}")
+                search_method = "sqlite_fallback"
+                raw_results = None
+        else:
+            search_method = "sqlite_only"
+            raw_results = None
+
+        # Fallback to direct SQLite search
+        if raw_results is None:
+            docs = self.sqlite.search_fulltext(query, limit=limit * 2)
+            raw_results = [
+                {
+                    "id": doc.id,
+                    "doc_type": doc.doc_type,
+                    "content": doc.content,
+                    "source": doc.source,
+                    "metadata": doc.metadata,
+                    "score": getattr(doc, "score", 1.0)
+                }
+                for doc in docs
+            ]
+
+        # Filter results for research types
         filtered = []
-        for doc in results:
+        seen_ids = set()
+
+        for result in raw_results:
+            # Handle both dict results (from tier_manager) and doc objects
+            if isinstance(result, dict):
+                result_id = result.get("id")
+                result_type = result.get("doc_type") or result.get("type")
+                result_content = result.get("content", "")
+                result_source = result.get("source", "")
+                result_metadata = result.get("metadata", {})
+            else:
+                result_id = result.id
+                result_type = result.doc_type
+                result_content = result.content
+                result_source = result.source
+                result_metadata = result.metadata
+
+            # Deduplicate
+            if result_id in seen_ids:
+                continue
+            seen_ids.add(result_id)
+
             # Filter by research types
-            if doc.doc_type not in ("transcript", "research_image", "research_session"):
+            if result_type not in research_types:
                 continue
 
             # Filter by specific type if provided
-            if doc_type and doc.doc_type != doc_type:
+            if doc_type and result_type != doc_type:
                 continue
 
             # Filter by session if provided
-            if session_id and doc.metadata.get("session_id") != session_id:
+            if session_id and result_metadata.get("session_id") != session_id:
                 continue
 
+            # Record access for promotion tracking
+            if self.tier_manager:
+                self.tier_manager.record_access(result_id, len(result_content))
+
             filtered.append({
-                "id": doc.id,
-                "type": doc.doc_type,
-                "content": doc.content[:300],
-                "source": doc.source,
-                "session_id": doc.metadata.get("session_id"),
-                "timestamp": doc.metadata.get("timestamp"),
-                "speaker": doc.metadata.get("speaker") if doc.doc_type == "transcript" else None
+                "id": result_id,
+                "type": result_type,
+                "content": result_content[:300],
+                "source": result_source,
+                "session_id": result_metadata.get("session_id"),
+                "timestamp": result_metadata.get("timestamp"),
+                "speaker": result_metadata.get("speaker") if result_type == "transcript" else None
             })
 
             if len(filtered) >= limit:
@@ -474,6 +612,7 @@ class ResearchHandler(BaseHandler):
                     "session_id": session_id,
                     "type": doc_type
                 },
+                "search_method": search_method,
                 "count": len(filtered),
                 "results": filtered
             }, indent=2)}]
