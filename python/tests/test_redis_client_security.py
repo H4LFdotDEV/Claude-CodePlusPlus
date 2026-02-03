@@ -39,7 +39,8 @@ class TestRedisClientSecureDeserialization:
 
     def test_get_session_valid_data(self, redis_client, sample_session_state, mock_redis):
         """Test get_session with valid data."""
-        mock_redis.get.return_value = json.dumps(sample_session_state.to_dict())
+        # Set return value for uncompressed key (compressed key returns None)
+        mock_redis.get.set_uncompressed_return_value(json.dumps(sample_session_state.to_dict()))
 
         result = redis_client.get_session(sample_session_state.session_id)
 
@@ -60,7 +61,7 @@ class TestRedisClientSecureDeserialization:
             "created_at": now,
             "updated_at": now,
         }
-        mock_redis.get.return_value = json.dumps(invalid_data)
+        mock_redis.get.set_uncompressed_return_value(json.dumps(invalid_data))
 
         result = redis_client.get_session("test")
 
@@ -68,7 +69,7 @@ class TestRedisClientSecureDeserialization:
 
     def test_get_session_malformed_json(self, redis_client, mock_redis, caplog):
         """Test get_session handles malformed JSON gracefully."""
-        mock_redis.get.return_value = "{ invalid json"
+        mock_redis.get.set_uncompressed_return_value("{ invalid json")
 
         with caplog.at_level(logging.ERROR):
             result = redis_client.get_session("test-session")
@@ -83,7 +84,7 @@ class TestRedisClientSecureDeserialization:
             "project_path": "path",
             # Missing created_at, updated_at, etc.
         }
-        mock_redis.get.return_value = json.dumps(incomplete_data)
+        mock_redis.get.set_uncompressed_return_value(json.dumps(incomplete_data))
 
         with caplog.at_level(logging.ERROR):
             result = redis_client.get_session("test")
@@ -103,7 +104,7 @@ class TestRedisClientSecureDeserialization:
             "created_at": "invalid-timestamp",  # Invalid format
             "updated_at": now,
         }
-        mock_redis.get.return_value = json.dumps(invalid_data)
+        mock_redis.get.set_uncompressed_return_value(json.dumps(invalid_data))
 
         with caplog.at_level(logging.ERROR):
             result = redis_client.get_session("test")
@@ -123,7 +124,7 @@ class TestRedisClientSecureDeserialization:
             "created_at": now,
             "updated_at": now,
         }
-        mock_redis.get.return_value = json.dumps(traversal_data)
+        mock_redis.get.set_uncompressed_return_value(json.dumps(traversal_data))
 
         with caplog.at_level(logging.ERROR):
             result = redis_client.get_session("test")
@@ -143,7 +144,7 @@ class TestRedisClientSecureDeserialization:
             "created_at": now,
             "updated_at": now,
         }
-        mock_redis.get.return_value = json.dumps(traversal_data)
+        mock_redis.get.set_uncompressed_return_value(json.dumps(traversal_data))
 
         with caplog.at_level(logging.ERROR):
             result = redis_client.get_session("test")
@@ -165,7 +166,7 @@ class TestRedisClientSecureDeserialization:
             "malicious_field": "should not be here",  # Extra field
             "another_injection": {"nested": "data"},
         }
-        mock_redis.get.return_value = json.dumps(data_with_extras)
+        mock_redis.get.set_uncompressed_return_value(json.dumps(data_with_extras))
 
         with caplog.at_level(logging.ERROR):
             result = redis_client.get_session("test")
@@ -505,7 +506,7 @@ class TestRedisClientSecureDeserialization:
             "created_at": now,
             "updated_at": now,
         }
-        mock_redis.get.return_value = json.dumps(redis_injection)
+        mock_redis.get.set_uncompressed_return_value(json.dumps(redis_injection))
 
         with caplog.at_level(logging.ERROR):
             result = redis_client.get_session("whatever")
@@ -525,7 +526,7 @@ class TestRedisClientSecureDeserialization:
             "created_at": now,
             "updated_at": now,
         }
-        mock_redis.get.return_value = json.dumps(shell_injection)
+        mock_redis.get.set_uncompressed_return_value(json.dumps(shell_injection))
 
         with caplog.at_level(logging.ERROR):
             result = redis_client.get_session("whatever")
@@ -544,7 +545,7 @@ class TestRedisClientSecureDeserialization:
             "created_at": now,
             "updated_at": now,
         }
-        mock_redis.get.return_value = json.dumps(backtick_injection)
+        mock_redis.get.set_uncompressed_return_value(json.dumps(backtick_injection))
 
         with caplog.at_level(logging.ERROR):
             result = redis_client.get_session("whatever")
@@ -567,7 +568,7 @@ class TestRedisClientSecureDeserialization:
 
     def test_session_state_maintains_type_safety(self, redis_client, sample_session_state, mock_redis):
         """Test SessionState object has correct types after deserialization."""
-        mock_redis.get.return_value = json.dumps(sample_session_state.to_dict())
+        mock_redis.get.set_uncompressed_return_value(json.dumps(sample_session_state.to_dict()))
 
         session = redis_client.get_session(sample_session_state.session_id)
 

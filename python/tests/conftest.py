@@ -137,12 +137,83 @@ def sample_documents():
     ]
 
 
+class SmartRedisMock:
+    """Custom mock for Redis get() that handles session compression logic.
+
+    The redis_client tries compressed keys (ending in :z) first,
+    then falls back to uncompressed. This mock returns None for compressed
+    keys by default.
+
+    For session tests (uncompressed), use: mock.get.set_uncompressed_return_value(value)
+    For session tests (compressed), use: mock.get.set_compressed_return_value(value)
+    For other tests (template/query/embedding), use: mock.get.return_value = value
+    For error tests, use: mock.get.side_effect = Exception(...)
+    """
+
+    def __init__(self):
+        self._direct_value = None
+        self._session_value = None
+        self._compressed_value = None
+        self._side_effect = None
+        self.call_args_list = []
+
+    @property
+    def return_value(self):
+        return self._direct_value
+
+    @return_value.setter
+    def return_value(self, value):
+        self._direct_value = value
+
+    @property
+    def side_effect(self):
+        return self._side_effect
+
+    @side_effect.setter
+    def side_effect(self, value):
+        self._side_effect = value
+
+    def set_uncompressed_return_value(self, value):
+        """Set return value for uncompressed session keys."""
+        self._session_value = value
+
+    def set_compressed_return_value(self, value):
+        """Set return value for compressed session keys (:z suffix)."""
+        self._compressed_value = value
+
+    def __call__(self, key):
+        self.call_args_list.append((key,))
+
+        # If side_effect is set, raise/call it
+        if self._side_effect is not None:
+            if isinstance(self._side_effect, BaseException):
+                raise self._side_effect
+            elif callable(self._side_effect):
+                return self._side_effect(key)
+            else:
+                raise self._side_effect
+
+        # Compressed session keys (:z suffix)
+        if key.endswith(":z"):
+            if self._compressed_value is not None:
+                return self._compressed_value
+            return None
+        # Session keys use session value if set
+        if ":session:" in key and self._session_value is not None:
+            return self._session_value
+        # All other keys use direct value
+        return self._direct_value
+
+
 @pytest.fixture
 def mock_redis():
     """Mock Redis client for tests without Redis."""
     mock = MagicMock()
     mock.ping.return_value = True
-    mock.get.return_value = None
+
+    # Use smart mock for get() to handle session compression
+    mock.get = SmartRedisMock()
+
     mock.setex.return_value = True
     mock.delete.return_value = 1
     mock.keys.return_value = []

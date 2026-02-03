@@ -113,8 +113,8 @@ class TestRedisClientWithMock:
         compressed = zlib.compress(data.encode(), level=6)
         encoded = base64.b64encode(compressed).decode()
 
-        # Mock get to return compressed data on first call (compressed key)
-        mock_redis.get.return_value = encoded
+        # Mock get to return compressed data for compressed key (:z suffix)
+        mock_redis.get.set_compressed_return_value(encoded)
         result = redis_client.get_session(sample_session_state.session_id)
         assert result is not None
         assert result.session_id == sample_session_state.session_id
