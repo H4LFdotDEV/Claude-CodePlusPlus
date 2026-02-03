@@ -52,10 +52,10 @@ The installer will:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────┐
-│                              CLAUDE CODE++                                        │
+│                              CLAUDE CODE++                                       │
 ├──────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                   │
-│  CLIENTS                                                                          │
+│                                                                                  │
+│  CLIENTS                                                                         │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────────────┐   │
 │  │  Claude Code    │  │    OpenClaw     │  │      Research Environment       │   │
 │  │     CLI         │  │  Multi-Channel  │  │    Voice + Webcam Whiteboard    │   │
@@ -64,37 +64,37 @@ The installer will:
 │  │  terminal       │  │  Telegram       │  │    whiteboard capture           │   │
 │  │                 │  │  Discord, etc.  │  │                                 │   │
 │  └────────┬────────┘  └────────┬────────┘  └─────────────┬───────────────────┘   │
-│           │                    │                         │                        │
-│           └────────────────────┼─────────────────────────┘                        │
-│                                │                                                  │
-│                    ┌───────────▼───────────┐                                      │
-│                    │    SHARED MEMORY      │                                      │
-│                    │    (Memory MCP)       │                                      │
-│                    └───────────┬───────────┘                                      │
-│                                │                                                  │
+│           │                    │                         │                       │
+│           └────────────────────┼─────────────────────────┘                       │
+│                                │                                                 │
+│                    ┌───────────▼───────────┐                                     │
+│                    │    SHARED MEMORY      │                                     │
+│                    │    (Memory MCP)       │                                     │
+│                    └───────────┬───────────┘                                     │
+│                                │                                                 │
 ├──────────────────────────────────────────────────────────────────────────────────┤
-│  MEMORY TIERS (Shared across all clients)                                         │
+│  MEMORY TIERS (Shared across all clients)                                        │
 │  ┌──────────┐  ┌───────────┐  ┌───────────┐  ┌───────────────────┐               │
 │  │  Redis   │  │ Graphiti  │  │  SQLite   │  │  Obsidian Vault   │               │
 │  │  (Hot)   │→ │  (Warm)   │→ │  (Cold)   │→ │  (Archive)        │               │
 │  │ Session  │  │ Knowledge │  │ Full-text │  │  Human-readable   │               │
 │  │ context  │  │ graph     │  │ search    │  │  export           │               │
 │  └──────────┘  └───────────┘  └───────────┘  └───────────────────┘               │
-│                                                                                   │
-│  SEARCH SYSTEM                                                                    │
+│                                                                                  │
+│  SEARCH SYSTEM                                                                   │
 │  ┌──────────┐  ┌───────────┐  ┌───────────┐  ┌───────────────────┐               │
 │  │  SQLite  │  │ livegrep  │  │ Graphiti  │  │    Semantic       │               │
 │  │ Full-text│  │ Global    │  │ Graph     │  │    (planned)      │               │
 │  │ search   │  │ regex     │  │ traversal │  │                   │               │
 │  └──────────┘  └───────────┘  └───────────┘  └───────────────────┘               │
-│                                                                                   │
-│  INFRASTRUCTURE (Docker)                                                          │
+│                                                                                  │
+│  INFRASTRUCTURE (Docker)                                                         │
 │  ┌──────────┐  ┌───────────┐  ┌───────────┐  ┌───────────────────┐               │
 │  │  Redis   │  │  Neo4j    │  │ Playwright│  │     OpenClaw      │               │
 │  │  Cache   │  │  Graph DB │  │  Browser  │  │     Gateway       │               │
 │  │  :6379   │  │  :7474    │  │  :9222    │  │     :18789        │               │
 │  └──────────┘  └───────────┘  └───────────┘  └───────────────────┘               │
-│                                                                                   │
+│                                                                                  │
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -204,23 +204,6 @@ docker-compose -f docker/docker-compose.yaml --profile livegrep --profile browse
 | openclaw | 18789 | Multi-channel gateway |
 | openclaw-browser | 9223 | OpenClaw browser sandbox |
 
-## Research Environment
-
-Voice and vision integration for hands-free research:
-
-```bash
-# Setup
-./scripts/setup-research-env.sh
-
-# Start research session
-start_research
-```
-
-**Features:**
-- **VoiceMode** - Natural voice conversations with Claude
-- **mcp-webcam** - Show diagrams, whiteboards, or documents
-- **Memory integration** - Captures stored in vault, transcripts in SQLite
-
 ## Project Structure
 
 ```
@@ -281,7 +264,6 @@ openclaw memory stats
 - [x] Four-tier memory system
 - [x] OpenClaw multi-channel integration
 - [x] Unified installer
-- [x] Research environment (voice + webcam)
 - [ ] Semantic search layer
 - [ ] Windows/Linux System Controller
 - [ ] CAIIDE++ VS Code fork integration

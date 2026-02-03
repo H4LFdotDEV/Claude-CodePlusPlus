@@ -13,6 +13,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Any
 
+from shared.log_utils import log_safe_query
+
 logger = logging.getLogger(__name__)
 
 # Check if httpx is available
@@ -296,8 +298,7 @@ class LivegrepClient:
             ))
 
         if results:
-            query_preview = query[:30] + "..." if len(query) > 30 else query
-            logger.debug(f"livegrep search '{query_preview}': {len(results)} results in {duration_ms:.1f}ms")
+            logger.debug(f"livegrep search '{log_safe_query(query)}': {len(results)} results in {duration_ms:.1f}ms")
 
         return LivegrepSearchResponse(
             results=results,

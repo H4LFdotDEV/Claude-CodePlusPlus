@@ -57,6 +57,7 @@ __all__ = [
     "VaultManager",
     "VaultNote",
     "MemoryMCPServer",
+    # Model Routing
     # Optional - Tiers
     "RedisClient",
     "SessionState",

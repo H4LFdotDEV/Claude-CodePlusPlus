@@ -1,6 +1,7 @@
 # test_rate_limiter.py
 # Tests for rate limiter implementation
 
+import threading
 import time
 import pytest
 from unittest.mock import patch
@@ -221,6 +222,243 @@ class TestRateLimiterCleanup:
         stats = limiter.stats()
         assert stats["active_clients"] == 1
         assert stats["total_requests_in_window"] == 1
+
+
+class TestRateLimiterThreadSafety:
+    """Tests for thread safety of rate limiter."""
+
+    @pytest.fixture
+    def rate_limiter(self):
+        """Create a rate limiter with test-friendly settings."""
+        from memory_mcp.rate_limiter import RateLimiter
+        return RateLimiter(max_requests=100, window_seconds=10)
+
+    def test_concurrent_check_same_client(self, rate_limiter):
+        """Test concurrent check() calls for the same client are thread-safe."""
+        results = []
+        errors = []
+
+        def worker():
+            try:
+                for _ in range(10):
+                    result = rate_limiter.check("client1")
+                    results.append(result)
+            except Exception as e:
+                errors.append(e)
+
+        # Launch 10 threads, each making 10 requests
+        threads = [threading.Thread(target=worker) for _ in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        # Should have no errors
+        assert len(errors) == 0
+
+        # Should have exactly 100 results (10 threads * 10 requests)
+        assert len(results) == 100
+
+        # All should be allowed (under the 100 request limit)
+        allowed_count = sum(1 for r in results if r.allowed)
+        assert allowed_count == 100
+
+        # Final count should be exactly 100
+        status = rate_limiter.get_client_status("client1")
+        assert status.current_count == 100
+
+    def test_concurrent_check_different_clients(self, rate_limiter):
+        """Test concurrent check() calls for different clients."""
+        results = []
+        errors = []
+
+        def worker(client_id):
+            try:
+                for _ in range(10):
+                    result = rate_limiter.check(client_id)
+                    results.append((client_id, result))
+            except Exception as e:
+                errors.append(e)
+
+        # Launch 5 threads for different clients
+        threads = [
+            threading.Thread(target=worker, args=(f"client{i}",))
+            for i in range(5)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        # Should have no errors
+        assert len(errors) == 0
+
+        # Should have 50 results (5 clients * 10 requests)
+        assert len(results) == 50
+
+        # Each client should have exactly 10 requests
+        for i in range(5):
+            client_id = f"client{i}"
+            status = rate_limiter.get_client_status(client_id)
+            assert status.current_count == 10
+
+    def test_concurrent_reset_and_check(self, rate_limiter):
+        """Test concurrent reset() and check() calls don't cause errors."""
+        stop_event = threading.Event()
+        errors = []
+
+        def checker():
+            try:
+                while not stop_event.is_set():
+                    rate_limiter.check("client1")
+                    time.sleep(0.001)
+            except Exception as e:
+                errors.append(e)
+
+        def resetter():
+            try:
+                while not stop_event.is_set():
+                    rate_limiter.reset("client1")
+                    time.sleep(0.005)
+            except Exception as e:
+                errors.append(e)
+
+        # Run checker and resetter concurrently for 0.5 seconds
+        checker_thread = threading.Thread(target=checker)
+        resetter_thread = threading.Thread(target=resetter)
+
+        checker_thread.start()
+        resetter_thread.start()
+
+        time.sleep(0.5)
+        stop_event.set()
+
+        checker_thread.join()
+        resetter_thread.join()
+
+        # Should complete without errors
+        assert len(errors) == 0
+
+    def test_concurrent_stats_and_check(self, rate_limiter):
+        """Test concurrent stats() and check() calls don't cause errors."""
+        stop_event = threading.Event()
+        errors = []
+        stats_results = []
+
+        def checker():
+            try:
+                while not stop_event.is_set():
+                    rate_limiter.check("client1")
+                    time.sleep(0.001)
+            except Exception as e:
+                errors.append(e)
+
+        def stats_reader():
+            try:
+                while not stop_event.is_set():
+                    stats = rate_limiter.stats()
+                    stats_results.append(stats)
+                    time.sleep(0.005)
+            except Exception as e:
+                errors.append(e)
+
+        # Run checker and stats reader concurrently for 0.5 seconds
+        checker_thread = threading.Thread(target=checker)
+        stats_thread = threading.Thread(target=stats_reader)
+
+        checker_thread.start()
+        stats_thread.start()
+
+        time.sleep(0.5)
+        stop_event.set()
+
+        checker_thread.join()
+        stats_thread.join()
+
+        # Should complete without errors
+        assert len(errors) == 0
+
+        # Stats should have been read successfully
+        assert len(stats_results) > 0
+        for stats in stats_results:
+            assert "active_clients" in stats
+            assert "total_requests_in_window" in stats
+
+    def test_concurrent_get_client_status(self, rate_limiter):
+        """Test concurrent get_client_status() calls are thread-safe."""
+        # Make some requests
+        for _ in range(10):
+            rate_limiter.check("client1")
+
+        statuses = []
+        errors = []
+
+        def worker():
+            try:
+                for _ in range(20):
+                    status = rate_limiter.get_client_status("client1")
+                    statuses.append(status)
+            except Exception as e:
+                errors.append(e)
+
+        # Launch 10 threads reading status concurrently
+        threads = [threading.Thread(target=worker) for _ in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        # Should have no errors
+        assert len(errors) == 0
+
+        # Should have 200 status results
+        assert len(statuses) == 200
+
+        # All should report the same count (10)
+        for status in statuses:
+            assert status.current_count == 10
+
+    def test_no_race_condition_on_limit_boundary(self, rate_limiter):
+        """Test that exactly max_requests are allowed with concurrent access."""
+        # Create a rate limiter with exactly 50 requests allowed
+        strict_limiter = pytest.importorskip("memory_mcp.rate_limiter").RateLimiter(
+            max_requests=50, window_seconds=10
+        )
+
+        results = []
+        errors = []
+
+        def worker():
+            try:
+                for _ in range(10):
+                    result = strict_limiter.check("client1")
+                    results.append(result)
+            except Exception as e:
+                errors.append(e)
+
+        # Launch 10 threads, each trying to make 10 requests (100 total attempts)
+        threads = [threading.Thread(target=worker) for _ in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        # Should have no errors
+        assert len(errors) == 0
+
+        # Should have exactly 100 results
+        assert len(results) == 100
+
+        # Exactly 50 should be allowed
+        allowed = [r for r in results if r.allowed]
+        denied = [r for r in results if not r.allowed]
+
+        assert len(allowed) == 50
+        assert len(denied) == 50
+
+        # Final count should be exactly 50
+        status = strict_limiter.get_client_status("client1")
+        assert status.current_count == 50
 
 
 class TestServerRateLimitIntegration:

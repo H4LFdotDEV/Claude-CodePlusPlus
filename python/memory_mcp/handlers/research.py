@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from .base import BaseHandler
-from ..validation import validate_string, validate_list, validate_limit
+from ..validation import validate_string, validate_list, validate_limit, validate_content
 
 logger = logging.getLogger("memory_mcp")
 
@@ -262,7 +262,8 @@ class ResearchHandler(BaseHandler):
         Returns:
             Dict with transcript_id and storage confirmation
         """
-        text = validate_string(arguments.get("text"), "text", min_len=1)
+        # Use validate_content to enforce size limits (1MB max)
+        text = validate_content(arguments.get("text"), "text")
         speaker = arguments.get("speaker", "user")
         session_id = arguments.get("session_id")
         timestamp = arguments.get("timestamp", datetime.now(timezone.utc).isoformat())
@@ -333,8 +334,12 @@ class ResearchHandler(BaseHandler):
         Returns:
             Dict with capture_id and storage confirmation
         """
-        description = validate_string(arguments.get("description"), "description", min_len=1)
+        # Use validate_content to enforce size limits (1MB max for description and OCR text)
+        description = validate_content(arguments.get("description"), "description")
         ocr_text = arguments.get("ocr_text", "")
+        # Validate OCR text size if present
+        if ocr_text:
+            ocr_text = validate_content(ocr_text, "ocr_text")
         image_path = arguments.get("image_path", "")
         session_id = arguments.get("session_id")
         capture_type = arguments.get("capture_type", "whiteboard")

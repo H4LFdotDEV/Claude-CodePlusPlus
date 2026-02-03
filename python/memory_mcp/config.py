@@ -130,6 +130,10 @@ class MemoryConfig:
     # Paths
     base_path: str = "~/.claude-code-pp"
 
+    # Content size limits (bytes)
+    max_content_size: int = 1_000_000  # 1MB max for any content
+    max_entity_extraction_size: int = 100_000  # 100KB max for entity extraction
+
     @classmethod
     def from_yaml(cls, path: str) -> "MemoryConfig":
         """
@@ -199,6 +203,11 @@ class MemoryConfig:
             repos_path=livegrep_data.get("repos_path", "~/.claude-code-pp/livegrep/repos"),
             enabled=livegrep_data.get("enabled", True),
         )
+
+        # Content size limits
+        limits = memory.get("limits", {})
+        config.max_content_size = limits.get("max_content_size", 1_000_000)
+        config.max_entity_extraction_size = limits.get("max_entity_extraction_size", 100_000)
 
         return config
 

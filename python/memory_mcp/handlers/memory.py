@@ -11,6 +11,7 @@ from ..validation import (
     validate_string, validate_list, validate_doc_type,
     validate_tags, validate_project, validate_content, validate_limit
 )
+from shared.log_utils import log_safe_query
 
 logger = logging.getLogger("memory_mcp")
 
@@ -104,7 +105,7 @@ class MemoryHandler(BaseHandler):
                 f"Invalid search type: {search_type}. Must be one of: text, semantic, hybrid"
             )
 
-        logger.debug(f"Searching for: '{query[:50]}...' type={search_type} limit={limit}")
+        logger.debug(f"Searching for: '{log_safe_query(query)}' type={search_type} limit={limit}")
 
         # Use TierManager for multi-tier search if available (hybrid or semantic)
         if self.tier_manager and search_type in ["hybrid", "semantic"]:

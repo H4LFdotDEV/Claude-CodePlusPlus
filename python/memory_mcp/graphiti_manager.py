@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
+from shared.log_utils import log_safe_query
+
 logger = logging.getLogger(__name__)
 
 # Check if graphiti-core is available
@@ -352,7 +354,7 @@ class GraphitiManager:
                     created_at=node.created_at.isoformat() if hasattr(node, 'created_at') else None
                 ))
                 
-            logger.debug(f"Entity search '{query[:30]}...': {len(results)} results")
+            logger.debug(f"Entity search '{log_safe_query(query)}': {len(results)} results")
             return results
             
         except Exception as e:
@@ -396,7 +398,7 @@ class GraphitiManager:
                     invalid_at=edge.invalid_at.isoformat() if hasattr(edge, 'invalid_at') and edge.invalid_at else None
                 ))
                 
-            logger.debug(f"Fact search '{query[:30]}...': {len(results)} results")
+            logger.debug(f"Fact search '{log_safe_query(query)}': {len(results)} results")
             return results
             
         except Exception as e:

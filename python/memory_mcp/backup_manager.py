@@ -11,7 +11,7 @@ import shutil
 import hashlib
 import logging
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from dataclasses import dataclass, asdict, field
 from datetime import datetime, timezone, timedelta
 from abc import ABC, abstractmethod
@@ -23,6 +23,7 @@ logger = logging.getLogger("memory_mcp.backup")
 @dataclass
 class BackupMetadata:
     """Metadata for a backup."""
+
     backup_id: str
     timestamp: str
     backup_type: str  # "full" or "incremental"
@@ -49,6 +50,7 @@ class BackupMetadata:
 @dataclass
 class BackupConfig:
     """Configuration for backup strategy."""
+
     retention_days: int = 30
     max_backups: int = 10
     compress: bool = True
@@ -100,8 +102,11 @@ class LocalBackupStrategy(BackupStrategy):
         self._ensure_backup_dir()
 
     def _ensure_backup_dir(self):
-        """Ensure backup directory exists."""
-        Path(self.backup_path).mkdir(parents=True, exist_ok=True)
+        """Ensure backup directory exists with secure permissions."""
+        path = Path(self.backup_path)
+        path.mkdir(parents=True, exist_ok=True)
+        # Ensure secure permissions (owner only)
+        os.chmod(path, 0o700)
 
     def _safe_join(self, base: str, *parts: str) -> str:
         """
@@ -121,7 +126,7 @@ class LocalBackupStrategy(BackupStrategy):
         for part in parts:
             if not isinstance(part, str):
                 raise TypeError(f"Path component must be string, got {type(part).__name__}")
-            if '\x00' in part:
+            if "\x00" in part:
                 raise ValueError("Path contains null bytes (path injection detected)")
 
         base_real = os.path.realpath(base)
@@ -129,9 +134,7 @@ class LocalBackupStrategy(BackupStrategy):
 
         # Verify result is within base directory
         if not (result == base_real or result.startswith(base_real + os.sep)):
-            raise ValueError(
-                f"Path traversal detected: {'/'.join(parts)} escapes base {base}"
-            )
+            raise ValueError(f"Path traversal detected: {'/'.join(parts)} escapes base {base}")
 
         return result
 
@@ -139,11 +142,70 @@ class LocalBackupStrategy(BackupStrategy):
         """Get directory for a specific backup."""
         return self._safe_join(self.backup_path, backup_id)
 
+    def _safe_extract_tar(self, tar_path: str, dest_dir: str) -> None:
+        """
+        Safely extract tarfile, validating all members to prevent path traversal.
+
+        This prevents "Tar Slip" attacks (CVE-2007-4559) where malicious archives
+        contain entries with absolute paths or '../' sequences that could write
+        files outside the intended destination.
+
+        Args:
+            tar_path: Path to the tar.gz file to extract
+            dest_dir: Destination directory for extraction
+
+        Raises:
+            ValueError: If path traversal or symlink escape is detected
+        """
+        dest_real = os.path.realpath(dest_dir)
+        os.makedirs(dest_real, mode=0o700, exist_ok=True)
+        # Ensure secure permissions (owner only)
+        os.chmod(dest_real, 0o700)
+
+        with tarfile.open(tar_path, "r:gz") as tar:
+            # First pass: validate all members before extracting any
+            for member in tar.getmembers():
+                # Check for null bytes in member name
+                if "\x00" in member.name:
+                    raise ValueError(f"Tar member contains null bytes: {member.name}")
+
+                # Resolve the final path
+                member_path = os.path.realpath(os.path.join(dest_real, member.name))
+
+                # Verify it stays within destination
+                if not (member_path == dest_real or member_path.startswith(dest_real + os.sep)):
+                    raise ValueError(f"Tar path traversal detected: {member.name}")
+
+                # Check symlinks don't point outside
+                if member.issym() or member.islnk():
+                    link_target = member.linkname
+                    if os.path.isabs(link_target):
+                        link_resolved = os.path.realpath(link_target)
+                    else:
+                        link_resolved = os.path.realpath(
+                            os.path.join(os.path.dirname(member_path), link_target)
+                        )
+                    if not link_resolved.startswith(dest_real + os.sep):
+                        raise ValueError(f"Tar symlink escape detected: {member.name} -> {link_target}")
+
+            # Second pass: extract (all members validated)
+            # Use filter='data' on Python 3.12+ for additional safety
+            import sys
+            if sys.version_info >= (3, 12):
+                tar.extractall(dest_real, filter='data')
+            else:
+                tar.extractall(dest_real)
+
+        logger.info(f"Safely extracted backup from {tar_path} to {dest_real}")
+
     def backup(self, metadata: BackupMetadata) -> bool:
         """Execute local backup."""
         try:
             backup_dir = self._get_backup_dir(metadata.backup_id)
-            Path(backup_dir).mkdir(parents=True, exist_ok=True)
+            path = Path(backup_dir)
+            path.mkdir(parents=True, exist_ok=True)
+            # Ensure secure permissions (owner only)
+            os.chmod(path, 0o700)
 
             # Copy source files
             for component, source_path in metadata.source_paths.items():
@@ -213,7 +275,9 @@ class LocalBackupStrategy(BackupStrategy):
                 tar.add(backup_dir, arcname=os.path.basename(backup_dir))
 
             compressed_size = os.path.getsize(tar_path)
-            metadata.compression_ratio = compressed_size / original_size if original_size > 0 else None
+            metadata.compression_ratio = (
+                compressed_size / original_size if original_size > 0 else None
+            )
 
             # Remove original directory
             shutil.rmtree(backup_dir)
@@ -302,11 +366,9 @@ class LocalBackupStrategy(BackupStrategy):
             backup_dir = self._get_backup_dir(backup_id)
             tar_path = f"{backup_dir}.tar.gz"
 
-            # Handle compressed backup
+            # Handle compressed backup with safe extraction
             if os.path.exists(tar_path):
-                with tarfile.open(tar_path, "r:gz") as tar:
-                    tar.extractall(os.path.dirname(backup_dir))
-                    logger.info(f"Extracted backup from {tar_path}")
+                self._safe_extract_tar(tar_path, os.path.dirname(backup_dir))
 
             if not os.path.exists(backup_dir):
                 logger.error(f"Backup directory not found: {backup_dir}")
@@ -340,7 +402,10 @@ class LocalBackupStrategy(BackupStrategy):
 
                 # Restore from backup
                 if os.path.isfile(backup_component_path):
-                    os.makedirs(os.path.dirname(source_path), exist_ok=True)
+                    parent_dir = os.path.dirname(source_path)
+                    os.makedirs(parent_dir, mode=0o700, exist_ok=True)
+                    # Ensure secure permissions (owner only)
+                    os.chmod(parent_dir, 0o700)
                     shutil.copy2(backup_component_path, source_path)
                 else:
                     shutil.copytree(backup_component_path, source_path, dirs_exist_ok=True)
@@ -466,6 +531,384 @@ class CloudBackupStrategy(BackupStrategy):
         return False
 
 
+# Check for optional encryption dependencies
+try:
+    from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+
+    CRYPTO_AVAILABLE = True
+except ImportError:
+    CRYPTO_AVAILABLE = False
+
+try:
+    import keyring
+
+    KEYRING_AVAILABLE = True
+except ImportError:
+    KEYRING_AVAILABLE = False
+
+
+KEYRING_SERVICE = "claude-code-pp"
+KEYRING_KEY_NAME = "backup-encryption-key"
+KEYRING_NONCE_COUNTER = "backup-nonce-counter"
+
+
+class EncryptedBackupManager:
+    """Backup manager with encryption support using system keyring.
+
+    Uses ChaCha20-Poly1305 for encryption with key stored in system keyring.
+    Provides the same interface as BackupManager for backwards compatibility.
+    """
+
+    def __init__(
+        self,
+        backup_config: Optional[BackupConfig] = None,
+        backup_path: Optional[str] = None,
+        base_manager: Optional["BackupManager"] = None,
+    ):
+        """Initialize encrypted backup manager.
+
+        Args:
+            backup_config: Backup configuration
+            backup_path: Path to store encrypted backups
+            base_manager: Optional BackupManager for delegation
+
+        Raises:
+            ImportError: If cryptography or keyring packages are not installed
+        """
+        if not CRYPTO_AVAILABLE:
+            raise ImportError(
+                "cryptography package required for encrypted backups. "
+                "Install with: pip install cryptography"
+            )
+        if not KEYRING_AVAILABLE:
+            raise ImportError(
+                "keyring package required for encrypted backups. "
+                "Install with: pip install keyring"
+            )
+
+        self.backup_config = backup_config or BackupConfig()
+        self.backup_path = backup_path or "~/.claude-code-pp/backups/encrypted"
+        self.backup_path = os.path.expanduser(self.backup_path)
+        os.makedirs(self.backup_path, mode=0o700, exist_ok=True)
+        # Ensure secure permissions (owner only)
+        os.chmod(self.backup_path, 0o700)
+
+        self._base = base_manager
+        self._key = self._get_or_create_key()
+        logger.info(f"Encrypted backup manager initialized: {self.backup_path}")
+
+    def _get_or_create_key(self) -> bytes:
+        """Get encryption key from system keyring, or create if not exists.
+
+        Returns:
+            32-byte encryption key
+        """
+        stored = keyring.get_password(KEYRING_SERVICE, KEYRING_KEY_NAME)
+        if stored:
+            logger.debug("Loaded encryption key from system keyring")
+            return bytes.fromhex(stored)
+
+        # Generate new 256-bit key and store in keyring
+        key = os.urandom(32)
+        keyring.set_password(KEYRING_SERVICE, KEYRING_KEY_NAME, key.hex())
+        logger.info("Generated new encryption key and stored in system keyring")
+        return key
+
+    def _get_and_increment_counter(self) -> int:
+        """Get and atomically increment the nonce counter from keyring.
+
+        Returns:
+            Current counter value (before increment)
+        """
+        counter_str = keyring.get_password(KEYRING_SERVICE, KEYRING_NONCE_COUNTER)
+        if counter_str:
+            counter = int(counter_str)
+        else:
+            counter = 0
+
+        # Increment and store, wrapping at 32-bit max
+        next_counter = (counter + 1) % (2**32)
+        keyring.set_password(KEYRING_SERVICE, KEYRING_NONCE_COUNTER, str(next_counter))
+        return counter
+
+    def _get_unique_nonce(self) -> bytes:
+        """Generate a unique 12-byte nonce using hybrid approach.
+
+        Combines:
+        - 4 bytes: Unix timestamp (seconds) for temporal uniqueness
+        - 4 bytes: Monotonic counter for collision resistance
+        - 4 bytes: Random bytes for additional entropy
+
+        This ensures uniqueness even if:
+        - System clock is wrong (counter protects)
+        - RNG has low entropy (timestamp + counter protect)
+        - Many backups created quickly (timestamp + counter protect)
+
+        Returns:
+            12-byte unique nonce
+        """
+        import struct
+        import time
+
+        # 4 bytes: timestamp (seconds since epoch)
+        timestamp = int(time.time())
+        timestamp_bytes = struct.pack(">I", timestamp)
+
+        # 4 bytes: monotonic counter
+        counter = self._get_and_increment_counter()
+        counter_bytes = struct.pack(">I", counter)  # Counter already wrapped in _get_and_increment_counter
+
+        # 4 bytes: random
+        random_bytes = os.urandom(4)
+
+        nonce = timestamp_bytes + counter_bytes + random_bytes
+        return nonce
+
+    def _encrypt(self, data: bytes) -> Tuple[bytes, bytes]:
+        """Encrypt data using ChaCha20-Poly1305.
+
+        Args:
+            data: Raw data to encrypt
+
+        Returns:
+            Tuple of (nonce, ciphertext) where ciphertext includes authentication tag
+        """
+        nonce = self._get_unique_nonce()
+        cipher = ChaCha20Poly1305(self._key)
+        ciphertext = cipher.encrypt(nonce, data, None)
+        return nonce, ciphertext
+
+    def _decrypt(self, nonce: bytes, ciphertext: bytes) -> bytes:
+        """Decrypt data using ChaCha20-Poly1305.
+
+        Args:
+            nonce: 12-byte nonce
+            ciphertext: Encrypted data with authentication tag
+
+        Returns:
+            Decrypted plaintext
+
+        Raises:
+            cryptography.exceptions.InvalidTag: If authentication fails
+        """
+        cipher = ChaCha20Poly1305(self._key)
+        return cipher.decrypt(nonce, ciphertext, None)
+
+    def backup(
+        self,
+        data: bytes,
+        metadata: Optional[Dict[str, Any]] = None,
+        filename_prefix: str = "backup",
+    ) -> str:
+        """Create an encrypted backup.
+
+        Args:
+            data: Raw backup data to encrypt
+            metadata: Optional metadata dict (stored in header)
+            filename_prefix: Prefix for backup filename
+
+        Returns:
+            Path to the encrypted backup file
+
+        Raises:
+            Exception: If backup creation fails
+        """
+        try:
+            # Encrypt the data
+            nonce, ciphertext = self._encrypt(data)
+
+            # Create backup file with metadata header
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            filename = f"{filename_prefix}_{timestamp}.enc"
+            backup_path = os.path.join(self.backup_path, filename)
+
+            # File format: [4-byte header len][JSON header][12-byte nonce][ciphertext]
+            header = {
+                "version": 1,
+                "algorithm": "chacha20-poly1305",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "metadata": metadata or {},
+            }
+            header_bytes = json.dumps(header).encode("utf-8")
+            header_len = len(header_bytes).to_bytes(4, "big")
+
+            with open(backup_path, "wb") as f:
+                f.write(header_len)
+                f.write(header_bytes)
+                f.write(nonce)
+                f.write(ciphertext)
+
+            size_mb = os.path.getsize(backup_path) / (1024 * 1024)
+            logger.info(f"Encrypted backup created: {filename} ({size_mb:.2f} MB)")
+            return backup_path
+
+        except Exception as e:
+            logger.error(f"Encrypted backup failed: {e}")
+            raise
+
+    def restore(self, backup_path: str) -> Tuple[bytes, Dict[str, Any]]:
+        """Restore from an encrypted backup.
+
+        Args:
+            backup_path: Path to the encrypted backup file
+
+        Returns:
+            Tuple of (decrypted data, metadata dict)
+
+        Raises:
+            ValueError: If backup format is invalid or unsupported
+            cryptography.exceptions.InvalidTag: If authentication fails
+        """
+        try:
+            with open(backup_path, "rb") as f:
+                # Read header
+                header_len = int.from_bytes(f.read(4), "big")
+                header_bytes = f.read(header_len)
+                header = json.loads(header_bytes.decode("utf-8"))
+
+                # Verify algorithm
+                if header.get("algorithm") != "chacha20-poly1305":
+                    raise ValueError(f"Unsupported algorithm: {header.get('algorithm')}")
+
+                # Read nonce and ciphertext
+                nonce = f.read(12)
+                ciphertext = f.read()
+
+            # Decrypt
+            data = self._decrypt(nonce, ciphertext)
+
+            logger.info(f"Encrypted backup restored: {os.path.basename(backup_path)}")
+            return data, header.get("metadata", {})
+
+        except Exception as e:
+            logger.error(f"Encrypted restore failed: {e}")
+            raise
+
+    def list_backups(self) -> List[Dict[str, Any]]:
+        """List available encrypted backups.
+
+        Returns:
+            List of backup info dicts with filename, path, size, modified time
+        """
+        backups = []
+        for filename in os.listdir(self.backup_path):
+            if filename.endswith(".enc"):
+                path = os.path.join(self.backup_path, filename)
+                stat = os.stat(path)
+
+                # Try to read metadata from header
+                metadata = None
+                try:
+                    with open(path, "rb") as f:
+                        header_len = int.from_bytes(f.read(4), "big")
+                        header_bytes = f.read(header_len)
+                        header = json.loads(header_bytes.decode("utf-8"))
+                        metadata = header.get("metadata")
+                except Exception:
+                    pass  # Ignore errors reading metadata
+
+                backups.append(
+                    {
+                        "filename": filename,
+                        "path": path,
+                        "size_bytes": stat.st_size,
+                        "size_mb": round(stat.st_size / (1024 * 1024), 2),
+                        "modified": stat.st_mtime,
+                        "created_at": header.get("created_at") if metadata is not None else None,
+                        "metadata": metadata,
+                    }
+                )
+
+        return sorted(backups, key=lambda x: x["modified"], reverse=True)
+
+    def delete_backup(self, backup_path: str) -> bool:
+        """Delete an encrypted backup.
+
+        Args:
+            backup_path: Path to backup file to delete
+
+        Returns:
+            True if successful
+        """
+        try:
+            if os.path.exists(backup_path):
+                os.remove(backup_path)
+                logger.info(f"Deleted encrypted backup: {os.path.basename(backup_path)}")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Failed to delete backup: {e}")
+            return False
+
+    def rotate_key(self, re_encrypt_existing: bool = True) -> bool:
+        """Rotate the encryption key.
+
+        Args:
+            re_encrypt_existing: If True, re-encrypt all existing backups with new key
+
+        Returns:
+            True if successful
+
+        Raises:
+            RuntimeError: If key rotation fails
+        """
+        old_key = self._key
+        new_key = os.urandom(32)
+
+        if re_encrypt_existing:
+            try:
+                # Re-encrypt all existing backups
+                for backup in self.list_backups():
+                    # Decrypt with old key
+                    self._key = old_key
+                    data, metadata = self.restore(backup["path"])
+
+                    # Encrypt with new key
+                    self._key = new_key
+                    nonce, ciphertext = self._encrypt(data)
+
+                    # Overwrite the file
+                    header = {
+                        "version": 1,
+                        "algorithm": "chacha20-poly1305",
+                        "created_at": metadata.get(
+                            "created_at", datetime.now(timezone.utc).isoformat()
+                        ),
+                        "metadata": metadata,
+                    }
+                    header_bytes = json.dumps(header).encode("utf-8")
+                    header_len = len(header_bytes).to_bytes(4, "big")
+
+                    with open(backup["path"], "wb") as f:
+                        f.write(header_len)
+                        f.write(header_bytes)
+                        f.write(nonce)
+                        f.write(ciphertext)
+
+                    logger.info(f"Re-encrypted backup: {backup['filename']}")
+
+            except Exception as e:
+                # Restore old key on failure
+                self._key = old_key
+                raise RuntimeError(f"Key rotation failed: {e}")
+
+        # Store new key in keyring
+        keyring.set_password(KEYRING_SERVICE, KEYRING_KEY_NAME, new_key.hex())
+        self._key = new_key
+
+        logger.info("Encryption key rotated successfully")
+        return True
+
+    @staticmethod
+    def is_available() -> bool:
+        """Check if encrypted backups are available.
+
+        Returns:
+            True if both cryptography and keyring packages are installed
+        """
+        return CRYPTO_AVAILABLE and KEYRING_AVAILABLE
+
+
 class BackupManager:
     """Orchestrates backup operations across memory system."""
 
@@ -473,7 +916,7 @@ class BackupManager:
         self,
         backup_config: Optional[BackupConfig] = None,
         strategy: Optional[BackupStrategy] = None,
-        memory_config: Optional[Dict[str, Any]] = None
+        memory_config: Optional[Dict[str, Any]] = None,
     ):
         self.backup_config = backup_config or BackupConfig()
         self.strategy = strategy or LocalBackupStrategy(self.backup_config)
@@ -484,10 +927,14 @@ class BackupManager:
         sources = {}
 
         if self.backup_config.include_sqlite:
-            sources["sqlite"] = self.memory_config.get("sqlite_path", "~/.claude-code-pp/memory/metadata.db")
+            sources["sqlite"] = self.memory_config.get(
+                "sqlite_path", "~/.claude-code-pp/memory/metadata.db"
+            )
 
         if self.backup_config.include_vault:
-            sources["vault"] = self.memory_config.get("vault_path", "~/.claude-code-pp/memory/vault")
+            sources["vault"] = self.memory_config.get(
+                "vault_path", "~/.claude-code-pp/memory/vault"
+            )
 
         return sources
 
@@ -500,7 +947,7 @@ class BackupManager:
             backup_id=backup_id,
             timestamp=datetime.now(timezone.utc).isoformat(),
             backup_type="full",
-            source_paths=sources
+            source_paths=sources,
         )
 
         start_time = datetime.now(timezone.utc)
@@ -561,5 +1008,5 @@ class BackupManager:
             "total_size_bytes": total_size,
             "total_size_mb": round(total_size / (1024 * 1024), 2),
             "oldest_backup": min((b.timestamp for b in backups), default=None),
-            "newest_backup": max((b.timestamp for b in backups), default=None)
+            "newest_backup": max((b.timestamp for b in backups), default=None),
         }

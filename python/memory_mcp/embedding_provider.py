@@ -22,6 +22,14 @@ except ImportError:
 
 from .config import get_config, EmbeddingConfig
 
+# Import shared cache (optional - graceful degradation if not available)
+try:
+    from shared.embedding_cache import UnifiedEmbeddingCache
+    CACHE_AVAILABLE = True
+except ImportError:
+    CACHE_AVAILABLE = False
+    UnifiedEmbeddingCache = None
+
 
 class EmbeddingProvider(ABC):
     """Base class for embedding providers."""
@@ -315,19 +323,155 @@ class FallbackEmbeddingProvider(EmbeddingProvider):
         return [p.name for p in self._providers]
 
 
-def get_embedding_provider(config: Optional[EmbeddingConfig] = None) -> EmbeddingProvider:
-    """Factory function to get appropriate embedding provider."""
+class CachedEmbeddingProvider(EmbeddingProvider):
+    """Caching wrapper for any embedding provider.
+
+    Uses UnifiedEmbeddingCache (Redis + SQLite) for persistence.
+    Falls back to in-memory cache if unified cache unavailable.
+    """
+
+    def __init__(
+        self,
+        provider: EmbeddingProvider,
+        cache: Optional["UnifiedEmbeddingCache"] = None,
+        max_memory_cache: int = 10000
+    ):
+        self._provider = provider
+        self._cache = cache
+        self._memory_cache: Dict[str, np.ndarray] = {}
+        self._max_memory_cache = max_memory_cache
+        self._stats = {"hits": 0, "misses": 0}
+
+    def _hash_text(self, text: str) -> str:
+        """Generate hash for cache key."""
+        return hashlib.sha256(text.encode()).hexdigest()
+
+    def _get_cached(self, text: str) -> Optional[np.ndarray]:
+        """Try to get embedding from cache."""
+        text_hash = self._hash_text(text)
+
+        # Try memory cache first
+        if text_hash in self._memory_cache:
+            self._stats["hits"] += 1
+            return self._memory_cache[text_hash]
+
+        # Try unified cache
+        if self._cache:
+            cached = self._cache.get(text)
+            if cached is not None:
+                self._stats["hits"] += 1
+                embedding = np.array(cached, dtype=np.float32)
+                self._memory_cache[text_hash] = embedding
+                return embedding
+
+        return None
+
+    def _set_cached(self, text: str, embedding: np.ndarray) -> None:
+        """Store embedding in cache."""
+        text_hash = self._hash_text(text)
+
+        # Memory cache with LRU eviction
+        if len(self._memory_cache) >= self._max_memory_cache:
+            # Remove oldest entry (first key)
+            oldest = next(iter(self._memory_cache))
+            del self._memory_cache[oldest]
+
+        self._memory_cache[text_hash] = embedding
+
+        # Store in unified cache
+        if self._cache:
+            self._cache.set(text, embedding.tolist())
+
+    def embed(self, text: str) -> np.ndarray:
+        """Generate embedding with caching."""
+        cached = self._get_cached(text)
+        if cached is not None:
+            return cached
+
+        self._stats["misses"] += 1
+        embedding = self._provider.embed(text)
+        self._set_cached(text, embedding)
+        return embedding
+
+    def embed_batch(self, texts: List[str]) -> List[np.ndarray]:
+        """Generate embeddings with caching."""
+        results: List[Optional[np.ndarray]] = [None] * len(texts)
+        uncached_indices: List[int] = []
+        uncached_texts: List[str] = []
+
+        # Check cache for each text
+        for i, text in enumerate(texts):
+            cached = self._get_cached(text)
+            if cached is not None:
+                results[i] = cached
+            else:
+                uncached_indices.append(i)
+                uncached_texts.append(text)
+
+        # Generate embeddings for uncached texts
+        if uncached_texts:
+            self._stats["misses"] += len(uncached_texts)
+            new_embeddings = self._provider.embed_batch(uncached_texts)
+            for idx, embedding in zip(uncached_indices, new_embeddings):
+                results[idx] = embedding
+                self._set_cached(texts[idx], embedding)
+
+        return results  # type: ignore
+
+    @property
+    def dimension(self) -> int:
+        return self._provider.dimension
+
+    @property
+    def name(self) -> str:
+        return f"cached({self._provider.name})"
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get cache statistics."""
+        total = self._stats["hits"] + self._stats["misses"]
+        hit_rate = self._stats["hits"] / total if total > 0 else 0.0
+        return {
+            "hits": self._stats["hits"],
+            "misses": self._stats["misses"],
+            "hit_rate": round(hit_rate, 4),
+            "memory_cache_size": len(self._memory_cache),
+            "provider": self._provider.name,
+        }
+
+
+def get_embedding_provider(
+    config: Optional[EmbeddingConfig] = None,
+    enable_cache: bool = True,
+    cache: Optional["UnifiedEmbeddingCache"] = None
+) -> EmbeddingProvider:
+    """Factory function to get appropriate embedding provider.
+
+    Args:
+        config: Embedding configuration
+        enable_cache: Whether to wrap provider with caching (default True)
+        cache: Optional pre-configured cache instance
+
+    Returns:
+        EmbeddingProvider (possibly wrapped with CachedEmbeddingProvider)
+    """
     config = config or get_config().embedding
 
+    # Create base provider
     if config.provider == "local":
-        return LocalEmbeddingProvider(
+        provider = LocalEmbeddingProvider(
             model=config.local_model,
             endpoint=config.local_endpoint
         )
     elif config.provider == "openai":
-        return OpenAIEmbeddingProvider(model=config.openai_model)
+        provider = OpenAIEmbeddingProvider(model=config.openai_model)
     elif config.provider == "voyage":
-        return VoyageEmbeddingProvider(model=config.voyage_model)
+        provider = VoyageEmbeddingProvider(model=config.voyage_model)
     else:
         # Default to fallback
-        return FallbackEmbeddingProvider(config)
+        provider = FallbackEmbeddingProvider(config)
+
+    # Wrap with caching if enabled
+    if enable_cache:
+        provider = CachedEmbeddingProvider(provider, cache=cache)
+
+    return provider

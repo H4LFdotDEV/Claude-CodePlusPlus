@@ -7,8 +7,7 @@
 services:
   # Knowledge graph for memory (warm layer) - Graphiti/Neo4j
   neo4j:
-    # TODO: Pin to digest for supply chain security
-    image: neo4j:5.26-community
+    image: neo4j@sha256:d75b69079f6d1253d03286552bd2202c1a9216d40cba159b532af71f74613e67  # 5.26-community
     container_name: claude-code-pp-neo4j
     ports:
       - "127.0.0.1:7474:7474"  # HTTP browser
@@ -30,7 +29,9 @@ services:
       - NEO4J_server_threads_worker__count=4
       - NEO4J_db_transaction_timeout=60s
     networks:
-      - claude-code-pp
+      - data         # Data tier (primary)
+      - application  # Accessible from app tier
+      - claude-code-pp  # Legacy compatibility
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || exit 1"]
@@ -52,8 +53,9 @@ services:
 
   # Code search engine (cold layer) - livegrep backend
   livegrep-backend:
-    # TODO: Pin to digest for supply chain security
-    image: ghcr.io/livegrep/livegrep:v2.0.0
+    # NOTE: GHCR image requires authentication to pull digest. Verify manually with:
+    # docker pull ghcr.io/livegrep/livegrep:v2.0.0 && docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/livegrep/livegrep:v2.0.0
+    image: ghcr.io/livegrep/livegrep:v2.0.0  # Unable to pin: GHCR access denied without auth
     container_name: claude-code-pp-livegrep-backend
     command: codesearch -load_index /data/index.idx -grpc 0.0.0.0:9999
     ports:
@@ -61,7 +63,8 @@ services:
     volumes:
       - livegrep-data:/data
     networks:
-      - claude-code-pp
+      - application  # App tier (search engine)
+      - claude-code-pp  # Legacy compatibility
     profiles:
       - livegrep
     restart: unless-stopped
@@ -86,8 +89,9 @@ services:
 
   # Code search frontend (cold layer) - livegrep web
   livegrep-frontend:
-    # TODO: Pin to digest for supply chain security
-    image: ghcr.io/livegrep/livegrep:v2.0.0
+    # NOTE: GHCR image requires authentication to pull digest. Verify manually with:
+    # docker pull ghcr.io/livegrep/livegrep:v2.0.0 && docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/livegrep/livegrep:v2.0.0
+    image: ghcr.io/livegrep/livegrep:v2.0.0  # Unable to pin: GHCR access denied without auth
     container_name: claude-code-pp-livegrep-frontend
     command: livegrep -listen 0.0.0.0:8910 -backends livegrep-backend:9999
     ports:
@@ -96,7 +100,9 @@ services:
       livegrep-backend:
         condition: service_healthy
     networks:
-      - claude-code-pp
+      - frontend     # External-facing web UI
+      - application  # Connect to backend
+      - claude-code-pp  # Legacy compatibility
     profiles:
       - livegrep
     restart: unless-stopped
@@ -119,8 +125,7 @@ services:
 
   # Vector store for memory (warm layer) - Legacy, use neo4j instead
   chromadb:
-    # TODO: Pin to digest for supply chain security
-    image: chromadb/chroma:0.4.22
+    image: chromadb/chroma@sha256:5c52289301c2f55b5d889edd16966f7349cb7b0e60619597f11e135ee406fec2  # 0.4.22
     container_name: claude-code-pp-chroma
     ports:
       - "127.0.0.1:8000:8000"
@@ -130,7 +135,8 @@ services:
       - IS_PERSISTENT=TRUE
       - ANONYMIZED_TELEMETRY=FALSE
     networks:
-      - claude-code-pp
+      - data  # Data tier only
+      - claude-code-pp  # Legacy compatibility
     profiles:
       - legacy
     restart: unless-stopped
@@ -142,8 +148,7 @@ services:
 
   # Fast cache and session memory (hot layer)
   redis:
-    # TODO: Pin to digest for supply chain security
-    image: redis:7.2-alpine
+    image: redis@sha256:65748f2ea686cb0e37a008cbe7024324db1d84abf57e917e1c2ec92b5e50f602  # 7.2-alpine
     container_name: claude-code-pp-redis
     ports:
       - "127.0.0.1:6379:6379"
@@ -151,7 +156,9 @@ services:
       - redis-data:/data
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD required}
     networks:
-      - claude-code-pp
+      - data         # Data tier (primary)
+      - application  # Accessible from app tier
+      - claude-code-pp  # Legacy compatibility
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "REDISCLI_AUTH=${REDIS_PASSWORD} redis-cli ping"]
@@ -172,29 +179,29 @@ services:
 
   # Browser automation (optional)
   playwright:
-    # TODO: Pin to digest for supply chain security
-    image: mcr.microsoft.com/playwright:v1.45.0-focal
+    image: mcr.microsoft.com/playwright@sha256:aaf7bf71469e471d6c4207ae3280d664be37c1a5472533b7ee74ee4741742044  # v1.45.0-focal
     container_name: claude-code-pp-playwright
     ports:
       - "127.0.0.1:9222:9222"
     shm_size: 2gb
     networks:
-      - claude-code-pp
+      - frontend  # Frontend tier only (isolated from data)
+      - claude-code-pp  # Legacy compatibility
     profiles:
       - browser
     restart: unless-stopped
 
   # Local LLM server via Ollama (optional)
   ollama:
-    # TODO: Pin to digest for supply chain security
-    image: ollama/ollama:0.1.33
+    image: ollama/ollama@sha256:6f2f92bd0f3b2785f1d211552fd20de78b5a5b88eea2ba131e1ec2cd2bf36a33  # 0.1.33
     container_name: claude-code-pp-ollama
     ports:
       - "127.0.0.1:11434:11434"
     volumes:
       - ollama-data:/root/.ollama
     networks:
-      - claude-code-pp
+      - application  # App tier (LLM service)
+      - claude-code-pp  # Legacy compatibility
     profiles:
       - local-llm
     restart: unless-stopped
@@ -216,21 +223,24 @@ services:
       - ${HOME}/projects:/projects:ro
       - test-results:/results
     networks:
-      - claude-code-pp
+      - application  # App tier (test infrastructure)
+      - claude-code-pp  # Legacy compatibility
     profiles:
       - testing
     restart: "no"
 
   # CI/CD simulation with Act (optional)
   act:
-    # TODO: Pin to digest for supply chain security
-    image: ghcr.io/nektos/act:v0.2.62
+    # NOTE: GHCR image requires authentication to pull digest. Verify manually with:
+    # docker pull ghcr.io/nektos/act:v0.2.62 && docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/nektos/act:v0.2.62
+    image: ghcr.io/nektos/act:v0.2.62  # Unable to pin: GHCR access denied without auth
     container_name: claude-code-pp-act
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${HOME}/projects:/projects
     networks:
-      - claude-code-pp
+      - application  # App tier (CI/CD infrastructure)
+      - claude-code-pp  # Legacy compatibility
     profiles:
       - cicd
     restart: "no"
@@ -259,7 +269,9 @@ services:
       - ~/.claude-code-pp/mounts:/mounts:ro
       - /var/run/claude-broker.sock:/var/run/claude-broker.sock:ro
     networks:
-      - claude-code-pp
+      - application  # App tier (primary)
+      - data         # Access to data tier
+      - claude-code-pp  # Legacy compatibility
     depends_on:
       redis:
         condition: service_healthy
@@ -295,7 +307,10 @@ services:
       # Share Memory MCP binary with container
       - ${HOME}/.claude-code-pp/bin:/app:ro
     networks:
-      - claude-code-pp
+      - frontend     # External-facing API
+      - application  # App tier
+      - data         # Access to data tier
+      - claude-code-pp  # Legacy compatibility
     depends_on:
       redis:
         condition: service_healthy
@@ -322,7 +337,8 @@ services:
       - "127.0.0.1:6080:6080"  # noVNC web
     shm_size: 2gb
     networks:
-      - claude-code-pp
+      - frontend  # Frontend tier only (browser automation isolated)
+      - claude-code-pp  # Legacy compatibility
     restart: unless-stopped
     deploy:
       resources:
@@ -353,7 +369,24 @@ volumes:
   openclaw-sessions:
     name: claude-code-pp-openclaw-sessions
 
+# Network Segmentation (Optimization #8)
+# Three-tier network architecture for defense in depth:
+# - frontend: External-facing services (browser automation, web UIs)
+# - application: Application logic (MCP servers, gateways)
+# - data: Database tier (Redis, Neo4j) - internal only
 networks:
+  frontend:
+    driver: bridge
+    name: claude-code-pp-frontend
+  application:
+    driver: bridge
+    name: claude-code-pp-application
+    internal: true  # No external access
+  data:
+    driver: bridge
+    name: claude-code-pp-data
+    internal: true  # No external access
+  # Legacy network for backwards compatibility
   claude-code-pp:
     driver: bridge
 

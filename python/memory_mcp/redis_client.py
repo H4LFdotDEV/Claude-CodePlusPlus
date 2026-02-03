@@ -25,6 +25,7 @@ except ImportError:
 from pydantic import ValidationError
 
 from .config import get_config, RedisConfig
+from shared.log_utils import log_safe_query
 from .schemas import (
     SessionStateModel,
     TemplateCacheModel,
@@ -468,7 +469,7 @@ class RedisClient:
                     "Failed to parse query cache JSON for %s: %s",
                     query_hash,
                     e,
-                    extra={"key": key, "query": query}
+                    extra={"key": key, "query": log_safe_query(query)}
                 )
                 return None
 
@@ -496,7 +497,7 @@ class RedisClient:
                     "Query cache validation failed for %s: %s",
                     query_hash,
                     e,
-                    extra={"key": key, "errors": e.errors(), "query": query}
+                    extra={"key": key, "errors": e.errors(), "query": log_safe_query(query)}
                 )
                 return None
 
@@ -612,6 +613,32 @@ class RedisClient:
                 extra={"key": key}
             )
             return None
+
+    def delete_cached_embedding(self, text: str) -> bool:
+        """
+        Delete a cached embedding.
+
+        Args:
+            text: The text whose embedding should be deleted
+
+        Returns:
+            True if deleted successfully, False otherwise
+        """
+        self._ensure_connected()
+        text_hash = hashlib.sha256(text.encode()).hexdigest()[:16]
+        key = f"{self.PREFIX_EMBEDDING}{text_hash}"
+
+        try:
+            result = self._client.delete(key)
+            return result > 0
+        except redis.RedisError as e:
+            logger.error(
+                "Redis error deleting embedding %s: %s",
+                text_hash,
+                e,
+                extra={"key": key}
+            )
+            return False
 
     # Context Window Management
 

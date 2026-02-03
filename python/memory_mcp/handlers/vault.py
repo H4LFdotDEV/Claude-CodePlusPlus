@@ -5,7 +5,7 @@ import logging
 from typing import Dict, Any
 
 from .base import BaseHandler
-from ..validation import validate_string, validate_list
+from ..validation import validate_string, validate_list, validate_content
 
 logger = logging.getLogger("memory_mcp")
 
@@ -30,7 +30,8 @@ class VaultHandler(BaseHandler):
             Dict with path and written status
         """
         path = validate_string(args.get("path"), "path", min_len=1, max_len=500)
-        content = validate_string(args.get("content"), "content", min_len=0)
+        # Use validate_content to enforce size limits (1MB max)
+        content = validate_content(args.get("content") or "", "content") if args.get("content") else ""
         tags = validate_list(args.get("tags"), "tags", str)
         folder = args.get("folder", "notes")
 

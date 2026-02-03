@@ -228,5 +228,6 @@ class TestGetEmbeddingProvider:
         with patch.object(httpx, 'Client', return_value=mock_client):
             from memory_mcp.embedding_provider import get_embedding_provider, LocalEmbeddingProvider
 
-            provider = get_embedding_provider(test_config.embedding)
+            # Disable caching to test raw provider
+            provider = get_embedding_provider(test_config.embedding, enable_cache=False)
             assert isinstance(provider, LocalEmbeddingProvider)

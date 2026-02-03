@@ -182,6 +182,19 @@ class TestRedisClientWithMock:
         result = redis_client.get_cached_embedding("cached text")
         assert result == embedding
 
+    def test_delete_cached_embedding(self, redis_client, mock_redis):
+        """Test deleting a cached embedding."""
+        mock_redis.delete.return_value = 1
+        result = redis_client.delete_cached_embedding("cached text")
+        assert result is True
+        mock_redis.delete.assert_called_once()
+
+    def test_delete_cached_embedding_not_found(self, redis_client, mock_redis):
+        """Test deleting non-existent embedding."""
+        mock_redis.delete.return_value = 0
+        result = redis_client.delete_cached_embedding("nonexistent")
+        assert result is False
+
     def test_push_context(self, redis_client, mock_redis):
         """Test pushing to context window."""
         message = {"role": "user", "content": "Hello"}

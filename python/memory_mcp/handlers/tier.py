@@ -8,6 +8,7 @@ from typing import Dict, Any, Optional
 from .base import BaseHandler
 from ..validation import validate_string, validate_limit
 from ..async_utils import run_async
+from shared.log_utils import log_safe_query
 
 logger = logging.getLogger("memory_mcp")
 
@@ -51,7 +52,7 @@ class TierHandler(BaseHandler):
         limit = validate_limit(args.get("limit"), "limit", default=10)
         limit = min(limit, MAX_ENTITY_SEARCH_LIMIT)
 
-        logger.debug(f"Searching entities for: '{query[:50]}...' limit={limit}")
+        logger.debug(f"Searching entities for: '{log_safe_query(query)}' limit={limit}")
 
         try:
             results = run_async(
@@ -93,7 +94,7 @@ class TierHandler(BaseHandler):
         limit = validate_limit(args.get("limit"), "limit", default=10)
         limit = min(limit, MAX_ENTITY_SEARCH_LIMIT)
 
-        logger.debug(f"Searching facts for: '{query[:50]}...' limit={limit}")
+        logger.debug(f"Searching facts for: '{log_safe_query(query)}' limit={limit}")
 
         try:
             results = run_async(
@@ -140,7 +141,7 @@ class TierHandler(BaseHandler):
         limit = validate_limit(args.get("limit"), "limit", default=50)
         limit = min(limit, MAX_CODE_SEARCH_LIMIT)
 
-        logger.debug(f"Code search for: '{query[:50]}...' limit={limit}")
+        logger.debug(f"Code search for: '{log_safe_query(query)}' limit={limit}")
 
         try:
             response = self.tier_manager.livegrep.search(

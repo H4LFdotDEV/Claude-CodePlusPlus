@@ -46,12 +46,20 @@ graphiti = [
 # Embeddings for semantic search
 embeddings = ["httpx~=0.28"]
 
+# Encrypted backups
+encryption = [
+    "cryptography~=44.0",
+    "keyring~=25.5",
+]
+
 # All optional dependencies for full installation
 all = [
     "redis~=5.2",
     "graphiti-core~=0.5",
     "neo4j~=5.27",
     "httpx~=0.28",
+    "cryptography~=44.0",
+    "keyring~=25.5",
 ]
 
 # Development dependencies

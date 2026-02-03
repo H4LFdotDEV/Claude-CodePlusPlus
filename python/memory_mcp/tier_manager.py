@@ -2,6 +2,7 @@
 # Orchestrates data flow between memory tiers
 # Jeremiah Kroesche | Halfservers LLC
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass
@@ -10,6 +11,8 @@ from typing import Dict, List, Optional, Any, TYPE_CHECKING
 from .access_tracker import AccessTracker
 from .stats_collector import record
 from .async_utils import run_async
+from shared.log_utils import log_safe_query
+from .config import MemoryConfig
 
 if TYPE_CHECKING:
     from .redis_client import RedisClient
@@ -58,14 +61,52 @@ class TierManager:
         graphiti: Optional["GraphitiManager"] = None,
         livegrep: Optional["LivegrepClient"] = None,
         sqlite: Optional["SQLiteIndex"] = None,
-        config: Optional[TierPromotionConfig] = None
+        vault: Optional[Any] = None,
+        config: Optional[TierPromotionConfig] = None,
+        memory_config: Optional[MemoryConfig] = None
     ):
         self.redis = redis
         self.graphiti = graphiti
         self.livegrep = livegrep
         self.sqlite = sqlite
+        self.vault = vault
         self.config = config or TierPromotionConfig()
+        self.memory_config = memory_config
         self._access_tracker = AccessTracker(redis_client=redis)
+
+    def _validate_content_size(self, content: str, operation: str = "storage") -> None:
+        """Validate content size is within limits to prevent OOM attacks.
+
+        Args:
+            content: Content to validate
+            operation: Type of operation ("storage" or "entity_extraction")
+
+        Raises:
+            ValueError: If content exceeds size limits
+        """
+        if not self.memory_config:
+            # No config available, skip validation
+            return
+
+        size = len(content.encode('utf-8'))
+
+        if operation == "storage":
+            max_size = self.memory_config.max_content_size
+            if size > max_size:
+                raise ValueError(
+                    f"Content size {size:,} bytes exceeds maximum {max_size:,} bytes "
+                    f"for {operation}. This limit prevents out-of-memory attacks."
+                )
+        elif operation == "entity_extraction":
+            max_size = self.memory_config.max_entity_extraction_size
+            if size > max_size:
+                logger.warning(
+                    f"Content size {size:,} bytes exceeds entity extraction limit "
+                    f"{max_size:,} bytes. Skipping entity extraction."
+                )
+                raise ValueError(
+                    f"Content too large for entity extraction ({size:,} > {max_size:,} bytes)"
+                )
 
     def should_promote_to_warm(self, doc_id: str) -> bool:
         """Check if document should be promoted from cold to warm tier.
@@ -101,6 +142,14 @@ class TierManager:
         try:
             doc = self.sqlite.get(doc_id)
             if not doc:
+                return False
+
+            # Validate content size before entity extraction (security: prevent OOM)
+            try:
+                self._validate_content_size(doc.content, operation="entity_extraction")
+            except ValueError as e:
+                # Content too large for entity extraction - skip promotion
+                logger.info(f"Skipping promotion of {doc_id}: {e}")
                 return False
 
             # Add to knowledge graph using shared async utility with timeout
@@ -258,12 +307,200 @@ class TierManager:
                 "code_search": {
                     "available": self.livegrep is not None,
                     "stats": stats.get("livegrep", {})
+                },
+                "archive": {
+                    "available": self.vault is not None,
+                    "stats": {}
                 }
             },
             "hot_documents": len(self._access_tracker.get_hot_documents(
                 threshold=self.config.promotion_threshold
             ))
         }
+
+    async def search_all_tiers_parallel(
+        self,
+        query: str,
+        limit: int = 10,
+        tiers: Optional[List[str]] = None
+    ) -> List[Dict[str, Any]]:
+        """Search all tiers concurrently and merge results.
+
+        This provides significant performance improvements over sequential search by:
+        - Running all tier searches in parallel using asyncio.gather
+        - Gracefully handling failures in individual tiers
+        - Merging and deduplicating results by ID
+        - Sorting by relevance score
+
+        Args:
+            query: Search query string
+            limit: Maximum results to return
+            tiers: Optional list of tiers to search ['hot', 'warm', 'cold', 'archive']
+
+        Returns:
+            Merged and deduplicated search results sorted by relevance
+        """
+        tiers = tiers or ['hot', 'warm', 'cold', 'archive']
+
+        # Create search tasks for each tier
+        tasks = []
+        tier_names = []
+
+        for tier in tiers:
+            if tier == 'hot' and self.redis:
+                tasks.append(self._search_hot_tier(query, limit))
+                tier_names.append('hot')
+            elif tier == 'warm' and self.graphiti:
+                tasks.append(self._search_warm_tier(query, limit))
+                tier_names.append('warm')
+            elif tier == 'cold' and self.sqlite:
+                tasks.append(self._search_cold_tier(query, limit))
+                tier_names.append('cold')
+            elif tier == 'archive' and self.vault:
+                tasks.append(self._search_archive_tier(query, limit))
+                tier_names.append('archive')
+
+        if not tasks:
+            logger.debug("No tiers available for parallel search")
+            return []
+
+        # Execute all searches concurrently with fault tolerance
+        start_time = time.time()
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        total_latency_ms = (time.time() - start_time) * 1000
+
+        # Merge and deduplicate
+        all_results = []
+        seen_ids = set()
+        tier_stats = {}
+
+        for tier_name, tier_results in zip(tier_names, results):
+            if isinstance(tier_results, Exception):
+                tier_stats[tier_name] = {"error": str(tier_results), "count": 0}
+                logger.warning(f"{tier_name} tier search failed: {tier_results}")
+                continue
+
+            tier_count = 0
+            for result in (tier_results or []):
+                result_id = result.get('id') or result.get('doc_id')
+                if result_id and result_id not in seen_ids:
+                    seen_ids.add(result_id)
+                    result['_source_tier'] = tier_name
+                    all_results.append(result)
+                    tier_count += 1
+
+            tier_stats[tier_name] = {"count": tier_count}
+
+        # Sort by relevance score (higher is better)
+        all_results.sort(
+            key=lambda r: r.get('score', r.get('relevance', 0)),
+            reverse=True
+        )
+
+        # Log performance
+        logger.debug(
+            f"Parallel search completed in {total_latency_ms:.1f}ms, "
+            f"found {len(all_results)} unique results from {tier_stats}"
+        )
+
+        return all_results[:limit]
+
+    async def _search_hot_tier(self, query: str, limit: int) -> List[Dict[str, Any]]:
+        """Search Redis hot tier.
+
+        Args:
+            query: Search query
+            limit: Maximum results
+
+        Returns:
+            List of search results from hot tier
+        """
+        if not self.redis:
+            return []
+        try:
+            return await asyncio.to_thread(
+                self._search_redis_cache, query
+            )
+        except Exception as e:
+            logger.warning(f"Hot tier search failed: {e}")
+            raise
+
+    async def _search_warm_tier(self, query: str, limit: int) -> List[Dict[str, Any]]:
+        """Search Graphiti warm tier.
+
+        Args:
+            query: Search query
+            limit: Maximum results
+
+        Returns:
+            List of search results from warm tier
+        """
+        if not self.graphiti:
+            return []
+        try:
+            # _search_graphiti uses run_async internally, so we need to run in thread
+            return await asyncio.to_thread(
+                self._search_graphiti, query, limit
+            )
+        except Exception as e:
+            logger.warning(f"Warm tier search failed: {e}")
+            raise
+
+    async def _search_cold_tier(self, query: str, limit: int) -> List[Dict[str, Any]]:
+        """Search SQLite cold tier.
+
+        Args:
+            query: Search query
+            limit: Maximum results
+
+        Returns:
+            List of search results from cold tier
+        """
+        if not self.sqlite:
+            return []
+        try:
+            docs = await asyncio.to_thread(
+                self.sqlite.search_fulltext, query, limit
+            )
+            return [self._doc_to_result(d) for d in docs]
+        except Exception as e:
+            logger.warning(f"Cold tier search failed: {e}")
+            raise
+
+    async def _search_archive_tier(self, query: str, limit: int) -> List[Dict[str, Any]]:
+        """Search Vault archive tier.
+
+        Args:
+            query: Search query
+            limit: Maximum results
+
+        Returns:
+            List of search results from archive tier
+        """
+        if not self.vault:
+            return []
+        try:
+            notes = await asyncio.to_thread(
+                self.vault.search_notes, query
+            )
+            # Convert VaultNote objects to dict format
+            return [
+                {
+                    'id': note.id,
+                    'content': note.content[:500],
+                    'type': 'note',
+                    'source': note.path,
+                    'score': 0.6,  # Archive tier gets lower base score
+                    'tier': 'archive',
+                    'match_type': 'text',
+                    'title': note.title,
+                    'tags': note.tags
+                }
+                for note in notes[:limit]
+            ]
+        except Exception as e:
+            logger.warning(f"Archive tier search failed: {e}")
+            raise
 
     def _search_redis_cache(self, query: str) -> List[Dict]:
         """Search Redis cache for cached query results."""
