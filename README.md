@@ -180,8 +180,8 @@ The installer detects your system and recommends a profile:
 |---------|------------|--------------|
 | **minimal** | SQLite + Vault | Python 3.10+ |
 | **standard** | + Redis | + Docker |
-| **full** | + Neo4j/Graphiti | + 4GB RAM |
-| **enterprise** | + livegrep | + 8GB RAM |
+| **full** | + Neo4j/Graphiti | 4GB+ RAM |
+| **enterprise** | + livegrep | 8GB+ RAM |
 
 ## Docker Services
 
