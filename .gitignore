@@ -74,3 +74,4 @@ Archive.zip
 .env.local
 .secrets.baseline
 SECURITY_FINDINGS.md
+wiki/
