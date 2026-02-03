@@ -47,6 +47,9 @@ except ImportError:
     EmbeddingProvider = None
     get_embedding_provider = None
 
+# Cost tracking
+from .cost_tracker import CostTracker, BudgetExceededError, MODEL_PRICING
+
 __all__ = [
     # Core
     "MemoryConfig",
@@ -57,7 +60,10 @@ __all__ = [
     "VaultManager",
     "VaultNote",
     "MemoryMCPServer",
-    # Model Routing
+    # Cost Tracking
+    "CostTracker",
+    "BudgetExceededError",
+    "MODEL_PRICING",
     # Optional - Tiers
     "RedisClient",
     "SessionState",
