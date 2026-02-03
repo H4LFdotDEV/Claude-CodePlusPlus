@@ -252,7 +252,11 @@ class Diagnostics:
             manager = GraphitiManager(
                 uri=config.graphiti.uri,
                 user=config.graphiti.user,
-                password=config.graphiti.password
+                password=config.graphiti.password,
+                max_connection_pool_size=config.graphiti.max_connection_pool_size,
+                connection_acquisition_timeout=config.graphiti.connection_acquisition_timeout,
+                max_connection_lifetime=config.graphiti.max_connection_lifetime,
+                connection_timeout=config.graphiti.connection_timeout,
             )
             latency = (time.time() - start) * 1000
 

@@ -8,6 +8,8 @@ import os
 import re
 import sqlite3
 import json
+import queue
+import threading
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 from dataclasses import dataclass, asdict
@@ -15,6 +17,82 @@ from datetime import datetime, timezone
 from contextlib import contextmanager
 
 from .config import get_config, SQLiteConfig
+
+
+class SQLiteConnectionPool:
+    """
+    Simple connection pool for SQLite to avoid overhead of creating/destroying connections.
+
+    Uses a thread-safe queue to manage a pool of persistent connections.
+    Connections are configured with performance optimizations on creation.
+    """
+
+    def __init__(self, db_path: str, pool_size: int = 5):
+        """
+        Initialize connection pool.
+
+        Args:
+            db_path: Path to SQLite database file
+            pool_size: Maximum number of connections to maintain
+        """
+        self.db_path = db_path
+        self.pool_size = pool_size
+        self._pool = queue.Queue(maxsize=pool_size)
+        self._lock = threading.Lock()
+        self._created_count = 0
+
+        # Pre-create connections
+        for _ in range(pool_size):
+            conn = self._create_connection()
+            self._pool.put(conn)
+
+    def _create_connection(self) -> sqlite3.Connection:
+        """Create a new connection with performance optimizations."""
+        conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        # Performance optimizations
+        conn.execute("PRAGMA journal_mode=WAL")  # Write-Ahead Logging
+        conn.execute("PRAGMA synchronous=NORMAL")  # Balance durability/performance
+        conn.execute("PRAGMA cache_size=-64000")  # 64MB cache
+        conn.execute("PRAGMA mmap_size=268435456")  # 256MB memory-mapped I/O
+        return conn
+
+    @contextmanager
+    def get_connection(self):
+        """
+        Get a connection from the pool.
+
+        Yields a connection and returns it to the pool when done.
+        If pool is empty, creates a new connection temporarily.
+        """
+        conn = None
+        try:
+            # Try to get from pool with short timeout
+            conn = self._pool.get(timeout=0.1)
+        except queue.Empty:
+            # Pool exhausted - create temporary connection
+            with self._lock:
+                self._created_count += 1
+            conn = self._create_connection()
+
+        try:
+            yield conn
+        finally:
+            # Return to pool if space available, otherwise close
+            try:
+                self._pool.put_nowait(conn)
+            except queue.Full:
+                conn.close()
+
+    def close_all(self):
+        """Close all pooled connections."""
+        while not self._pool.empty():
+            try:
+                conn = self._pool.get_nowait()
+                conn.close()
+            except queue.Empty:
+                break
 
 
 @dataclass
@@ -82,6 +160,9 @@ class SQLiteIndex:
         # Ensure directory exists
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
 
+        # Initialize connection pool
+        self._pool = SQLiteConnectionPool(self.path, pool_size=5)
+
         self._init_database()
 
     def _escape_like_pattern(self, value: str) -> str:
@@ -105,19 +186,9 @@ class SQLiteIndex:
 
     @contextmanager
     def _get_connection(self):
-        """Get a database connection with row factory and performance optimizations."""
-        conn = sqlite3.connect(self.path)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
-        # Performance optimizations
-        conn.execute("PRAGMA journal_mode=WAL")  # Write-Ahead Logging for concurrency
-        conn.execute("PRAGMA synchronous=NORMAL")  # Balance durability and performance
-        conn.execute("PRAGMA cache_size=-64000")  # 64MB cache
-        conn.execute("PRAGMA mmap_size=268435456")  # 256MB memory-mapped I/O
-        try:
+        """Get a database connection from the pool."""
+        with self._pool.get_connection() as conn:
             yield conn
-        finally:
-            conn.close()
 
     def _init_database(self):
         """Initialize database schema."""
@@ -482,3 +553,7 @@ class SQLiteIndex:
                 for row in rows:
                     yield MemoryDocument.from_row(row)
                 offset += batch_size
+
+    def close(self):
+        """Close all pooled connections."""
+        self._pool.close_all()

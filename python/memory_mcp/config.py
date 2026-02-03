@@ -75,6 +75,11 @@ class RedisConfig:
     ttl_templates: int = 86400  # 24 hours
     ttl_queries: int = 3600  # 1 hour (increased from 5 min for better cache hit ratio)
 
+    # TLS/SSL configuration
+    ssl: bool = False
+    ssl_cert_reqs: str = "required"  # "required", "optional", or "none"
+    ssl_ca_certs: Optional[str] = None  # Path to CA certificate bundle
+
 
 @dataclass
 class SQLiteConfig:
@@ -106,6 +111,11 @@ class GraphitiConfig:
     password: Optional[str] = None  # From NEO4J_PASSWORD env var
     openai_api_key: Optional[str] = None  # For entity extraction
     enabled: bool = True  # Set to False to disable Graphiti
+    # Connection pool settings
+    max_connection_pool_size: int = 20  # Max connections per host
+    connection_acquisition_timeout: int = 30  # Seconds to wait for connection
+    max_connection_lifetime: int = 3600  # Seconds before connection is removed
+    connection_timeout: int = 5  # Seconds to wait for TCP connection
 
 
 @dataclass
@@ -168,6 +178,9 @@ class MemoryConfig:
             ttl_session=redis_data.get("ttl_session", 3600),
             ttl_templates=redis_data.get("ttl_templates", 86400),
             ttl_queries=redis_data.get("ttl_queries", 3600),
+            ssl=redis_data.get("ssl", os.environ.get("REDIS_SSL", "").lower() == "true"),
+            ssl_cert_reqs=redis_data.get("ssl_cert_reqs", "required"),
+            ssl_ca_certs=redis_data.get("ssl_ca_certs", os.environ.get("REDIS_SSL_CA_CERTS")),
         )
 
         # Paths
@@ -192,6 +205,10 @@ class MemoryConfig:
             password=graphiti_data.get("password", os.environ.get("NEO4J_PASSWORD")),
             openai_api_key=graphiti_data.get("openai_api_key", os.environ.get("OPENAI_API_KEY")),
             enabled=graphiti_data.get("enabled", True),
+            max_connection_pool_size=graphiti_data.get("max_connection_pool_size", 20),
+            connection_acquisition_timeout=graphiti_data.get("connection_acquisition_timeout", 30),
+            max_connection_lifetime=graphiti_data.get("max_connection_lifetime", 3600),
+            connection_timeout=graphiti_data.get("connection_timeout", 5),
         )
 
         # livegrep config (code search - cold tier)

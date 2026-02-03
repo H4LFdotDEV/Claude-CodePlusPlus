@@ -86,7 +86,10 @@ def test_config(temp_dir):
 def sqlite_index(test_config):
     """Create a SQLite index for testing."""
     from memory_mcp.sqlite_index import SQLiteIndex
-    return SQLiteIndex(config=test_config.sqlite)
+    index = SQLiteIndex(config=test_config.sqlite)
+    yield index
+    # Clean up connection pool after test
+    index.close()
 
 
 @pytest.fixture

@@ -66,6 +66,27 @@ class TestRedisClientWithMock:
         assert result is True
         mock_redis.setex.assert_called_once()
 
+    def test_save_session_compressed(self, redis_client, mock_redis):
+        """Test saving large session state with compression."""
+        from memory_mcp.redis_client import SessionState
+
+        # Create a large session (> 1KB)
+        large_session = SessionState(
+            session_id="large-session",
+            project_path="/test/project",
+            active_files=[f"/test/file{i}.py" for i in range(100)],
+            recent_queries=["query " * 50 for _ in range(50)],
+            context_window=[{"role": "user", "content": "x" * 500} for _ in range(20)],
+            created_at="2026-02-02T00:00:00Z",
+            updated_at="2026-02-02T00:00:00Z"
+        )
+
+        result = redis_client.save_session(large_session)
+        assert result is True
+        # Verify compressed key format is used (:z suffix)
+        call_args = mock_redis.setex.call_args
+        assert call_args[0][0].endswith(":z")
+
     def test_get_session_not_found(self, redis_client, mock_redis):
         """Test getting nonexistent session."""
         mock_redis.get.return_value = None
@@ -73,25 +94,55 @@ class TestRedisClientWithMock:
         assert result is None
 
     def test_get_session_found(self, redis_client, sample_session_state, mock_redis):
-        """Test getting existing session."""
-        mock_redis.get.return_value = json.dumps(sample_session_state.to_dict())
+        """Test getting existing uncompressed session."""
+        # Return None for compressed key, JSON for uncompressed
+        mock_redis.get.side_effect = lambda key: (
+            None if key.endswith(":z") else json.dumps(sample_session_state.to_dict())
+        )
+        result = redis_client.get_session(sample_session_state.session_id)
+        assert result is not None
+        assert result.session_id == sample_session_state.session_id
+
+    def test_get_session_compressed(self, redis_client, sample_session_state, mock_redis):
+        """Test getting compressed session."""
+        import zlib
+        import base64
+
+        # Compress session data
+        data = json.dumps(sample_session_state.to_dict())
+        compressed = zlib.compress(data.encode(), level=6)
+        encoded = base64.b64encode(compressed).decode()
+
+        # Mock get to return compressed data on first call (compressed key)
+        mock_redis.get.return_value = encoded
         result = redis_client.get_session(sample_session_state.session_id)
         assert result is not None
         assert result.session_id == sample_session_state.session_id
 
     def test_delete_session(self, redis_client, mock_redis):
-        """Test deleting session."""
+        """Test deleting session (handles both compressed and uncompressed)."""
         mock_redis.delete.return_value = 1
         result = redis_client.delete_session("test-session")
         assert result is True
+        # Verify both keys are attempted to be deleted
+        mock_redis.delete.assert_called_once()
+        call_args = mock_redis.delete.call_args[0]
+        assert len(call_args) == 2  # Both compressed and uncompressed keys
 
     def test_list_sessions(self, redis_client, mock_redis):
-        """Test listing sessions using SCAN."""
+        """Test listing sessions using SCAN (handles both compressed and uncompressed)."""
         # SCAN returns (cursor, keys) - cursor=0 means complete
-        mock_redis.scan.return_value = (0, ["cc:session:sess1", "cc:session:sess2"])
+        # Mix of compressed (:z) and uncompressed sessions
+        mock_redis.scan.return_value = (0, [
+            "cc:session:sess1",
+            "cc:session:sess2:z",
+            "cc:session:sess3:z"
+        ])
         sessions = redis_client.list_sessions()
-        assert len(sessions) == 2
+        assert len(sessions) == 3
         assert "sess1" in sessions
+        assert "sess2" in sessions
+        assert "sess3" in sessions
 
     def test_cache_template(self, redis_client, mock_redis):
         """Test caching a template."""

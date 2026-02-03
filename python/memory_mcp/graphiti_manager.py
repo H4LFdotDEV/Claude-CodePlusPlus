@@ -25,6 +25,14 @@ except ImportError:
     GRAPHITI_AVAILABLE = False
     logger.info("graphiti-core not installed. Install with: pip install graphiti-core")
 
+# Check if neo4j driver is available (for connection pool configuration)
+try:
+    from neo4j import AsyncGraphDatabase
+    NEO4J_DRIVER_AVAILABLE = True
+except ImportError:
+    NEO4J_DRIVER_AVAILABLE = False
+    logger.info("neo4j driver not installed. Install with: pip install neo4j")
+
 
 @dataclass
 class EntityResult:
@@ -93,7 +101,11 @@ class GraphitiManager:
         uri: str = None,
         user: str = None,
         password: str = None,
-        openai_api_key: str = None
+        openai_api_key: str = None,
+        max_connection_pool_size: int = 20,
+        connection_acquisition_timeout: int = 30,
+        max_connection_lifetime: int = 3600,
+        connection_timeout: int = 5
     ):
         """
         Initialize Graphiti manager.
@@ -103,6 +115,10 @@ class GraphitiManager:
             user: Neo4j username (default: neo4j)
             password: Neo4j password (from NEO4J_PASSWORD env var)
             openai_api_key: OpenAI API key for entity extraction (from OPENAI_API_KEY env var)
+            max_connection_pool_size: Max connections per host (default: 20)
+            connection_acquisition_timeout: Seconds to wait for connection (default: 30)
+            max_connection_lifetime: Seconds before connection removal (default: 3600)
+            connection_timeout: Seconds to wait for TCP connection (default: 5)
 
         Note:
             Password and API key overrides are stored in environment variables
@@ -112,6 +128,10 @@ class GraphitiManager:
         # Non-sensitive config can be stored as attributes
         self._uri_override = uri
         self._user_override = user
+        self._max_connection_pool_size = max_connection_pool_size
+        self._connection_acquisition_timeout = connection_acquisition_timeout
+        self._max_connection_lifetime = max_connection_lifetime
+        self._connection_timeout = connection_timeout
 
         # Sensitive credentials: store overrides in environment, not instance
         # This allows testing while preventing credential exposure via inspection
@@ -121,6 +141,7 @@ class GraphitiManager:
             os.environ["_GRAPHITI_OVERRIDE_OPENAI_KEY"] = openai_api_key
 
         self._graphiti: Optional["Graphiti"] = None
+        self._neo4j_driver = None  # Store driver for connection pool
         self._initialized = False
         self._init_lock: Optional[asyncio.Lock] = None  # Lazily initialized
 
@@ -204,12 +225,53 @@ class GraphitiManager:
                 return True
 
             try:
+                # Create custom Neo4j driver with connection pool settings
+                # if neo4j driver is available
+                if NEO4J_DRIVER_AVAILABLE:
+                    try:
+                        self._neo4j_driver = AsyncGraphDatabase.driver(
+                            self.uri,
+                            auth=(self.user, self._password),
+                            max_connection_pool_size=self._max_connection_pool_size,
+                            connection_acquisition_timeout=self._connection_acquisition_timeout,
+                            max_connection_lifetime=self._max_connection_lifetime,
+                            connection_timeout=self._connection_timeout,
+                        )
+                        logger.debug(
+                            f"Neo4j driver created with pool size {self._max_connection_pool_size}"
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to create custom Neo4j driver: {e}")
+                        self._neo4j_driver = None
+
                 # Initialize Graphiti
-                self._graphiti = Graphiti(
-                    uri=self.uri,
-                    user=self.user,
-                    password=self._password
-                )
+                # Try to pass custom driver if available and Graphiti supports it
+                try:
+                    if self._neo4j_driver:
+                        # Attempt to pass custom driver (Graphiti v0.17.0+)
+                        self._graphiti = Graphiti(
+                            uri=self.uri,
+                            user=self.user,
+                            password=self._password,
+                            graph_driver=self._neo4j_driver
+                        )
+                        logger.debug("Using custom Neo4j driver with connection pool")
+                    else:
+                        # Fallback to default initialization
+                        self._graphiti = Graphiti(
+                            uri=self.uri,
+                            user=self.user,
+                            password=self._password
+                        )
+                except TypeError:
+                    # Graphiti doesn't support graph_driver parameter
+                    # Fallback to default initialization
+                    logger.debug("Graphiti doesn't support graph_driver param, using defaults")
+                    self._graphiti = Graphiti(
+                        uri=self.uri,
+                        user=self.user,
+                        password=self._password
+                    )
 
                 # Build indices and constraints
                 await self._graphiti.build_indices_and_constraints()
@@ -221,6 +283,9 @@ class GraphitiManager:
             except Exception as e:
                 logger.error(f"Failed to initialize Graphiti: {e}")
                 self._graphiti = None
+                if self._neo4j_driver:
+                    await self._neo4j_driver.close()
+                    self._neo4j_driver = None
                 return False
 
     async def add_memory(
@@ -557,3 +622,13 @@ class GraphitiManager:
                 finally:
                     self._graphiti = None
                     self._initialized = False
+
+            # Close custom Neo4j driver if it exists
+            if self._neo4j_driver:
+                try:
+                    await self._neo4j_driver.close()
+                    logger.debug("Neo4j driver closed")
+                except Exception as e:
+                    logger.debug(f"Error closing Neo4j driver: {e}")
+                finally:
+                    self._neo4j_driver = None

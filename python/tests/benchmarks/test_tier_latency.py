@@ -312,3 +312,53 @@ class TestTierManager:
         assert "tiers" in stats
         assert "cold" in stats["tiers"]
         assert stats["tiers"]["cold"]["available"] is True
+
+    @pytest.mark.asyncio
+    async def test_background_promotion_queue(self, benchmark_config):
+        """Test background promotion queue functionality."""
+        from memory_mcp.tier_manager import TierManager
+        from memory_mcp.sqlite_index import SQLiteIndex
+        import asyncio
+
+        sqlite = SQLiteIndex(config=benchmark_config.sqlite)
+        manager = TierManager(sqlite=sqlite)
+
+        # Start background promoter
+        await manager.start_background_promoter()
+
+        # Verify queue is initialized
+        assert manager._promotion_queue is not None
+        assert manager._promotion_task is not None
+        assert not manager._promotion_task.done()
+
+        # Test queueing a promotion
+        success = manager.queue_promotion("test-doc-id")
+        # Should succeed (queue not full)
+        # Note: Without graphiti, promotion will be skipped but queueing should work
+        assert success is True
+
+        # Wait a bit for background worker to process
+        await asyncio.sleep(0.1)
+
+        # Cancel the background task for cleanup
+        manager._promotion_task.cancel()
+        try:
+            await manager._promotion_task
+        except asyncio.CancelledError:
+            pass
+
+    @pytest.mark.asyncio
+    async def test_queue_promotion_fallback(self, benchmark_config):
+        """Test that queue_promotion returns False when queue unavailable."""
+        from memory_mcp.tier_manager import TierManager
+        from memory_mcp.sqlite_index import SQLiteIndex
+
+        sqlite = SQLiteIndex(config=benchmark_config.sqlite)
+        manager = TierManager(sqlite=sqlite)
+
+        # Without starting background promoter, queue should be None
+        assert manager._promotion_queue is None
+
+        # Queueing should return False
+        success = manager.queue_promotion("test-doc-id")
+        assert success is False

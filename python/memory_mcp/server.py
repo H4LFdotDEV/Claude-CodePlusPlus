@@ -259,7 +259,17 @@ class MemoryMCPServer:
             logger.info("Graphiti not available - install with: pip install graphiti-core")
             return None
         try:
-            manager = GraphitiManager()
+            config = get_config()
+            manager = GraphitiManager(
+                uri=config.graphiti.uri,
+                user=config.graphiti.user,
+                password=config.graphiti.password,
+                openai_api_key=config.graphiti.openai_api_key,
+                max_connection_pool_size=config.graphiti.max_connection_pool_size,
+                connection_acquisition_timeout=config.graphiti.connection_acquisition_timeout,
+                max_connection_lifetime=config.graphiti.max_connection_lifetime,
+                connection_timeout=config.graphiti.connection_timeout,
+            )
             logger.info("Graphiti manager initialized (lazy connection)")
             return manager
         except Exception as e:
@@ -494,6 +504,11 @@ class MemoryMCPServer:
             asyncio.streams.FlowControlMixin, sys.stdout
         )
         writer = asyncio.StreamWriter(writer_transport, writer_protocol, reader, loop)
+
+        # Start background promotion queue if tier manager and graphiti are available
+        if self.tier_manager and self.tier_manager.graphiti:
+            await self.tier_manager.start_background_promoter()
+            logger.info("Background promotion queue started")
 
         while True:
             try:

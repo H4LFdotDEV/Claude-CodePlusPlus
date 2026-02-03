@@ -1750,14 +1750,24 @@ main() {
         step "Setting up Permission Broker"
         setup_permission_broker
     else
-        # Step 6: Install Python package
-        step "Installing Memory MCP server"
+        # Step 6+7: Run Python install and Docker services in parallel
+        step "Installing Memory MCP server & starting services (parallel)"
+
+        # Start Docker services in background (if applicable)
+        if [ "$PROFILE" != "minimal" ] && [ "$DOCKER_RUNNING" == "true" ]; then
+            start_docker_services &
+            DOCKER_PID=$!
+        fi
+
+        # Install Python package (foreground)
         install_python_package
         create_wrapper_script
 
-        # Step 7: Start Docker services
-        step "Starting infrastructure services"
-        start_docker_services
+        # Wait for Docker services if started
+        if [ -n "${DOCKER_PID:-}" ]; then
+            info "Waiting for Docker services..."
+            wait $DOCKER_PID 2>/dev/null || true
+        fi
 
         # Step 8: Configure Claude
         step "Configuring Claude Code"

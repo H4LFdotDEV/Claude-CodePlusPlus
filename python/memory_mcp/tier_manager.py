@@ -74,6 +74,10 @@ class TierManager:
         self.memory_config = memory_config
         self._access_tracker = AccessTracker(redis_client=redis)
 
+        # Background promotion queue
+        self._promotion_queue: Optional[asyncio.Queue] = None
+        self._promotion_task: Optional[asyncio.Task] = None
+
     def _validate_content_size(self, content: str, operation: str = "storage") -> None:
         """Validate content size is within limits to prevent OOM attacks.
 
@@ -107,6 +111,111 @@ class TierManager:
                 raise ValueError(
                     f"Content too large for entity extraction ({size:,} > {max_size:,} bytes)"
                 )
+
+    async def start_background_promoter(self):
+        """Start background promotion worker.
+
+        This starts a background task that processes the promotion queue,
+        moving expensive entity extraction off the critical path.
+        """
+        if self._promotion_queue is None:
+            self._promotion_queue = asyncio.Queue(maxsize=1000)
+
+        if self._promotion_task is None or self._promotion_task.done():
+            self._promotion_task = asyncio.create_task(self._background_promoter())
+            logger.info("Background promotion worker started")
+
+    async def _background_promoter(self):
+        """Background worker that promotes documents to warm tier.
+
+        Processes promotion queue continuously, handling timeouts and errors gracefully.
+        """
+        logger.info("Background promoter started")
+        while True:
+            try:
+                # Wait up to 60s for a document to promote
+                doc_id = await asyncio.wait_for(
+                    self._promotion_queue.get(),
+                    timeout=60.0
+                )
+                await self._promote_to_warm(doc_id)
+            except asyncio.TimeoutError:
+                # No documents to promote, continue waiting
+                continue
+            except Exception as e:
+                logger.error(f"Background promotion failed: {e}")
+
+    async def _promote_to_warm(self, doc_id: str) -> bool:
+        """Extract entities and store in Graphiti knowledge graph (async version).
+
+        Args:
+            doc_id: Document ID to promote
+
+        Returns:
+            True if promotion succeeded
+        """
+        if not self.graphiti or not self.sqlite:
+            return False
+
+        start = time.time()
+        try:
+            # Run synchronous SQLite get in thread pool
+            doc = await asyncio.to_thread(self.sqlite.get, doc_id)
+            if not doc:
+                return False
+
+            # Validate content size before entity extraction (security: prevent OOM)
+            try:
+                self._validate_content_size(doc.content, operation="entity_extraction")
+            except ValueError as e:
+                # Content too large for entity extraction - skip promotion
+                logger.info(f"Skipping promotion of {doc_id}: {e}")
+                return False
+
+            # Add to knowledge graph with timeout
+            await asyncio.wait_for(
+                self.graphiti.add_memory(
+                    content=doc.content,
+                    source=doc.source,
+                    doc_type=doc.doc_type
+                ),
+                timeout=PROMOTION_TIMEOUT_SECONDS
+            )
+
+            latency_ms = (time.time() - start) * 1000
+            record("graphiti", latency_ms, success=True)
+            logger.info(f"Promoted document {doc_id} to warm tier in {latency_ms:.1f}ms")
+            return True
+
+        except asyncio.TimeoutError:
+            latency_ms = (time.time() - start) * 1000
+            record("graphiti", latency_ms, success=False)
+            logger.warning(f"Promotion timeout for {doc_id} after {latency_ms:.1f}ms")
+            return False
+        except Exception as e:
+            latency_ms = (time.time() - start) * 1000
+            record("graphiti", latency_ms, success=False)
+            logger.warning(f"Failed to promote {doc_id}: {e}")
+            return False
+
+    def queue_promotion(self, doc_id: str) -> bool:
+        """Queue document for background promotion.
+
+        Args:
+            doc_id: Document ID to queue for promotion
+
+        Returns:
+            True if successfully queued, False if queue is full or unavailable
+        """
+        if self._promotion_queue and not self._promotion_queue.full():
+            try:
+                self._promotion_queue.put_nowait(doc_id)
+                logger.debug(f"Queued document {doc_id} for background promotion")
+                return True
+            except asyncio.QueueFull:
+                logger.warning(f"Promotion queue full, skipping {doc_id}")
+                return False
+        return False
 
     def should_promote_to_warm(self, doc_id: str) -> bool:
         """Check if document should be promoted from cold to warm tier.
@@ -278,7 +387,11 @@ class TierManager:
 
         # Check if document should be promoted
         if self.should_promote_to_warm(doc_id):
-            self.promote_to_warm(doc_id)
+            # Try to queue for background promotion first (non-blocking)
+            if not self.queue_promotion(doc_id):
+                # If queue is unavailable/full, fall back to synchronous promotion
+                logger.debug(f"Background queue unavailable, promoting {doc_id} synchronously")
+                self.promote_to_warm(doc_id)
 
     def get_tier_stats(self) -> Dict[str, Any]:
         """Get statistics for all tiers.

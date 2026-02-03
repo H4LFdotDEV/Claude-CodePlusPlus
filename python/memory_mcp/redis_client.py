@@ -8,8 +8,11 @@
 import json
 import hashlib
 import logging
+import ssl as ssl_module
 import threading
 import time
+import zlib
+import base64
 from typing import Optional, Dict, Any, List, Iterator
 from datetime import datetime, timezone
 
@@ -158,17 +161,40 @@ class RedisClient:
         with self._lock:
             for attempt in range(retries + 1):
                 try:
-                    self._client = redis.Redis(
-                        host=self.config.host,
-                        port=self.config.port,
-                        db=self.config.db,
-                        password=self.config.password,
-                        decode_responses=True,
-                        socket_timeout=5,
-                        socket_connect_timeout=5,
-                        retry_on_timeout=True,
-                        health_check_interval=30,  # Auto-reconnect
-                    )
+                    # Prepare connection parameters
+                    connection_params = {
+                        "host": self.config.host,
+                        "port": self.config.port,
+                        "db": self.config.db,
+                        "password": self.config.password,
+                        "decode_responses": True,
+                        "socket_timeout": 5,
+                        "socket_connect_timeout": 5,
+                        "retry_on_timeout": True,
+                        "health_check_interval": 30,  # Auto-reconnect
+                    }
+
+                    # Add TLS/SSL parameters if enabled
+                    if self.config.ssl:
+                        connection_params["ssl"] = True
+
+                        # Map cert_reqs string to ssl.CERT_* constant
+                        if self.config.ssl_cert_reqs == "required":
+                            connection_params["ssl_cert_reqs"] = ssl_module.CERT_REQUIRED
+                        elif self.config.ssl_cert_reqs == "optional":
+                            connection_params["ssl_cert_reqs"] = ssl_module.CERT_OPTIONAL
+                        elif self.config.ssl_cert_reqs == "none":
+                            connection_params["ssl_cert_reqs"] = ssl_module.CERT_NONE
+                        else:
+                            # Default to CERT_REQUIRED for security
+                            connection_params["ssl_cert_reqs"] = ssl_module.CERT_REQUIRED
+
+                        # Add CA certificate path if provided
+                        if self.config.ssl_ca_certs:
+                            connection_params["ssl_ca_certs"] = self.config.ssl_ca_certs
+
+                    self._client = redis.Redis(**connection_params)
+
                     # Test connection
                     self._client.ping()
                     self._connected = True
@@ -218,16 +244,42 @@ class RedisClient:
     # Session Management
 
     def save_session(self, session: SessionState) -> bool:
-        """Save session state."""
+        """Save session state with automatic compression for large sessions."""
         self._ensure_connected()
-        key = f"{self.PREFIX_SESSION}{session.session_id}"
         session.updated_at = datetime.now(timezone.utc).isoformat()
 
+        # Serialize session data
+        data = json.dumps(session.to_dict())
+
+        # Compress if larger than 1KB
+        if len(data) > 1024:
+            try:
+                compressed = zlib.compress(data.encode(), level=6)
+                encoded = base64.b64encode(compressed).decode()
+                key = f"{self.PREFIX_SESSION}{session.session_id}:z"
+
+                self._client.setex(
+                    key,
+                    self.config.ttl_session,
+                    encoded
+                )
+                logger.debug(
+                    f"Saved compressed session {session.session_id}: "
+                    f"{len(data)} -> {len(encoded)} bytes "
+                    f"({100 - (len(encoded) * 100 // len(data))}% reduction)"
+                )
+                return True
+            except (zlib.error, redis.RedisError) as e:
+                logger.warning(f"Compression failed, saving uncompressed: {e}")
+                # Fall through to uncompressed save
+
+        # Save uncompressed (small sessions or compression failure)
+        key = f"{self.PREFIX_SESSION}{session.session_id}"
         try:
             self._client.setex(
                 key,
                 self.config.ttl_session,
-                json.dumps(session.to_dict())
+                data
             )
             return True
         except redis.RedisError:
@@ -235,7 +287,7 @@ class RedisClient:
 
     def get_session(self, session_id: str) -> Optional[SessionState]:
         """
-        Retrieve and validate session state.
+        Retrieve and validate session state (supports compressed sessions).
 
         SECURITY: Validates session data using Pydantic schema before
         deserializing to SessionState object. Prevents injection attacks
@@ -251,12 +303,35 @@ class RedisClient:
             ConnectionError: If Redis is not connected
         """
         self._ensure_connected()
-        key = f"{self.PREFIX_SESSION}{session_id}"
+
+        # Try compressed session first (faster and more space-efficient)
+        key_compressed = f"{self.PREFIX_SESSION}{session_id}:z"
+        key_uncompressed = f"{self.PREFIX_SESSION}{session_id}"
 
         try:
-            data = self._client.get(key)
-            if data is None:
-                return None
+            data = None
+            # Try compressed format
+            compressed_data = self._client.get(key_compressed)
+            if compressed_data:
+                try:
+                    decoded = base64.b64decode(compressed_data)
+                    decompressed = zlib.decompress(decoded)
+                    data = decompressed.decode()
+                    logger.debug(f"Loaded compressed session {session_id}")
+                except (zlib.error, base64.binascii.Error, UnicodeDecodeError) as e:
+                    logger.error(
+                        "Failed to decompress session %s: %s",
+                        session_id,
+                        e,
+                        extra={"key": key_compressed}
+                    )
+                    return None
+
+            # If no compressed data found, try uncompressed format
+            if not data:
+                data = self._client.get(key_uncompressed)
+                if not data:
+                    return None
 
             # Parse JSON
             try:
@@ -266,7 +341,7 @@ class RedisClient:
                     "Failed to parse session JSON for %s: %s",
                     session_id,
                     e,
-                    extra={"key": key}
+                    extra={"key": key_compressed if compressed_data else key_uncompressed}
                 )
                 return None
 
@@ -279,7 +354,7 @@ class RedisClient:
                     "Session data validation failed for %s: %s",
                     session_id,
                     e,
-                    extra={"key": key, "errors": e.errors()}
+                    extra={"key": key_compressed if compressed_data else key_uncompressed, "errors": e.errors()}
                 )
                 return None
 
@@ -288,15 +363,18 @@ class RedisClient:
                 "Redis error retrieving session %s: %s",
                 session_id,
                 e,
-                extra={"key": key}
+                extra={"session_id": session_id}
             )
             return None
 
     def delete_session(self, session_id: str) -> bool:
-        """Delete session state."""
+        """Delete session state (handles both compressed and uncompressed)."""
         self._ensure_connected()
-        key = f"{self.PREFIX_SESSION}{session_id}"
-        return self._client.delete(key) > 0
+        key_compressed = f"{self.PREFIX_SESSION}{session_id}:z"
+        key_uncompressed = f"{self.PREFIX_SESSION}{session_id}"
+        # Delete both (one will be 0, the other 1 if exists)
+        deleted = self._client.delete(key_compressed, key_uncompressed)
+        return deleted > 0
 
     def _scan_keys(self, pattern: str) -> Iterator[str]:
         """
@@ -317,7 +395,14 @@ class RedisClient:
         """List all active session IDs using non-blocking SCAN."""
         self._ensure_connected()
         pattern = f"{self.PREFIX_SESSION}*"
-        return [k.replace(self.PREFIX_SESSION, "") for k in self._scan_keys(pattern)]
+        session_ids = set()
+        for key in self._scan_keys(pattern):
+            # Remove prefix and :z suffix if present
+            session_id = key.replace(self.PREFIX_SESSION, "")
+            if session_id.endswith(":z"):
+                session_id = session_id[:-2]
+            session_ids.add(session_id)
+        return list(session_ids)
 
     # Template Caching
 
